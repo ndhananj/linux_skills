@@ -86,8 +86,16 @@ mkdir -p "$MODELS_DIR"
 # ---------------------------------------------------------------------------
 # 5. Remind user about config
 # ---------------------------------------------------------------------------
-yellow "5/5  Checking configuration..."
+yellow "5/5  Restoring and checking configuration..."
 CONFIG_FILE="$RUNTIME_DIR/config.yaml"
+
+# Recreate runtime/config.yaml from the repository's tracked version so each
+# install run starts from a clean baseline config.
+if git -C "$REPO_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    git -C "$REPO_ROOT" checkout -- "runtime/config.yaml"
+    green "     Restored runtime/config.yaml from repository defaults"
+fi
+
 if grep -q "YOUR_GROQ_API_KEY" "$CONFIG_FILE"; then
     yellow "     NOTICE: Open $CONFIG_FILE and replace YOUR_GROQ_API_KEY"
     yellow "     with your key from https://console.groq.com/keys"

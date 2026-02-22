@@ -65,6 +65,7 @@ bash install.sh
 - Install `build-essential`, `cmake`, `git`, `python3`, `wget`
 - Clone and compile `llama.cpp` (server binary only — fast even on 1 vCPU)
 - Install Python dependencies from `requirements.txt`
+- Reproduce `runtime/config.yaml` from the repository defaults on each install run
 
 ### 2. Download a model
 

@@ -8,6 +8,7 @@ runtime/models/
 runtime/llama-server
 
 # --- Local configuration overrides (may contain API keys) ---
+runtime/config.yaml
 runtime/config.local.yaml
 
 # --- Python ---
