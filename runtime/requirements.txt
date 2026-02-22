@@ -1,0 +1,11 @@
+# Python dependencies for the Linux Skills Agent runtime
+# Install with:  pip3 install -r requirements.txt
+
+# OpenAI-compatible client (works with llama.cpp server AND Groq API)
+openai>=1.30.0
+
+# YAML configuration file parser
+pyyaml>=6.0
+
+# Simple CLI argument parsing for agent.py
+fire>=0.6.0

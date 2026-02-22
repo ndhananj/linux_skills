@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+# =============================================================================
+# install.sh — One-shot setup for the Linux Skills Agent on a fresh VPS
+#
+# Tested on: Ubuntu 22.04 LTS (Vultr $6/mo: 1 vCPU, 1 GB RAM)
+# Run as:    bash install.sh
+# =============================================================================
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RUNTIME_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPO_ROOT="$(cd "$RUNTIME_DIR/.." && pwd)"
+VENDOR_DIR="$RUNTIME_DIR/vendor"
+MODELS_DIR="$RUNTIME_DIR/models"
+
+# ---------------------------------------------------------------------------
+# Colour helpers
+# ---------------------------------------------------------------------------
+green()  { printf '\033[0;32m%s\033[0m\n' "$*"; }
+yellow() { printf '\033[1;33m%s\033[0m\n' "$*"; }
+red()    { printf '\033[0;31m%s\033[0m\n' "$*"; }
+
+green "=== Linux Skills Agent — Installer ==="
+echo  "Repo root : $REPO_ROOT"
+echo  "Runtime   : $RUNTIME_DIR"
+echo
+
+# ---------------------------------------------------------------------------
+# 1. System packages
+# ---------------------------------------------------------------------------
+yellow "1/5  Installing system packages..."
+sudo apt-get update -qq
+sudo apt-get install -y --no-install-recommends \
+    build-essential \
+    cmake \
+    git \
+    python3 \
+    python3-pip \
+    wget \
+    curl \
+    locatedb 2>/dev/null || true   # updatedb / mlocate — optional
+
+# ---------------------------------------------------------------------------
+# 2. Python dependencies
+# ---------------------------------------------------------------------------
+yellow "2/5  Installing Python dependencies..."
+pip3 install --quiet --upgrade pip
+pip3 install --quiet -r "$RUNTIME_DIR/requirements.txt"
+
+# ---------------------------------------------------------------------------
+# 3. Build llama.cpp (CPU-only, no GPU flags needed)
+# ---------------------------------------------------------------------------
+yellow "3/5  Building llama.cpp server..."
+mkdir -p "$VENDOR_DIR"
+LLAMA_DIR="$VENDOR_DIR/llama.cpp"
+
+if [ ! -d "$LLAMA_DIR" ]; then
+    git clone --depth 1 https://github.com/ggerganov/llama.cpp.git "$LLAMA_DIR"
+else
+    yellow "     llama.cpp already cloned — pulling latest..."
+    git -C "$LLAMA_DIR" pull --ff-only
+fi
+
+# Build only the server binary to keep compile time short on a 1-vCPU VPS
+(
+    cd "$LLAMA_DIR"
+    cmake -B build -DLLAMA_NATIVE=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF 2>&1 | tail -5
+    cmake --build build --config Release --target llama-server -j"$(nproc)" 2>&1 | tail -10
+)
+
+# Symlink the binary to a predictable location
+SERVER_BIN="$LLAMA_DIR/build/bin/llama-server"
+if [ ! -f "$SERVER_BIN" ]; then
+    # Older llama.cpp versions put the binary elsewhere
+    SERVER_BIN="$(find "$LLAMA_DIR/build" -name "llama-server" -type f | head -1)"
+fi
+ln -sf "$SERVER_BIN" "$RUNTIME_DIR/llama-server"
+green "     llama-server binary: $SERVER_BIN"
+
+# ---------------------------------------------------------------------------
+# 4. Create models directory
+# ---------------------------------------------------------------------------
+yellow "4/5  Creating models directory..."
+mkdir -p "$MODELS_DIR"
+
+# ---------------------------------------------------------------------------
+# 5. Remind user about config
+# ---------------------------------------------------------------------------
+yellow "5/5  Checking configuration..."
+CONFIG_FILE="$RUNTIME_DIR/config.yaml"
+if grep -q "YOUR_GROQ_API_KEY" "$CONFIG_FILE"; then
+    yellow "     NOTICE: Open $CONFIG_FILE and replace YOUR_GROQ_API_KEY"
+    yellow "     with your key from https://console.groq.com/keys"
+    yellow "     (optional — the agent works without it using the local model)"
+fi
+
+echo
+green "=== Installation complete! ==="
+echo
+echo "Next steps:"
+echo "  1.  Download a model:  bash $SCRIPT_DIR/download_model.sh"
+echo "  2.  Start the server:  bash $SCRIPT_DIR/start_server.sh"
+echo "  3.  Run the agent:     python3 $RUNTIME_DIR/agent.py --prompt \"your task\""

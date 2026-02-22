@@ -1,0 +1,57 @@
+# =============================================================================
+# Linux Skills Agent — Configuration
+# =============================================================================
+# Copy this file to config.local.yaml and set your secrets there, or edit
+# this file directly.  config.local.yaml is listed in .gitignore so your
+# API keys are never committed.
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Agent behaviour
+# ---------------------------------------------------------------------------
+agent:
+  # The system prompt sent to the LLM at the start of every conversation.
+  system_prompt: |
+    You are a highly capable Linux systems administrator AI agent.
+    You have access to a comprehensive set of tools that map directly to
+    Linux commands.  When a user asks you to perform a task:
+
+      1. Think step-by-step about which tools you need.
+      2. Call the appropriate tools in the correct order.
+      3. Inspect the tool output and decide whether more steps are needed.
+      4. When you have all the information, give a clear, concise answer.
+
+    Always prefer targeted, safe commands.  Never run destructive operations
+    (rm -rf, mkfs, etc.) unless the user has explicitly confirmed their intent.
+
+  # Maximum characters of tool output to include in the LLM context.
+  # Longer output is truncated to prevent context-window overflow.
+  max_tool_output_chars: 4000
+
+# ---------------------------------------------------------------------------
+# LLM back-ends
+# ---------------------------------------------------------------------------
+llm:
+
+  # ---- Primary: local llama.cpp server (CPU-only, zero API cost) -----------
+  local:
+    # Base URL of the llama.cpp OpenAI-compatible server
+    base_url: "http://localhost:8080/v1"
+    # The server ignores the API key, but the openai client requires one
+    api_key: "local-key"
+    # Model identifier sent in the request (llama.cpp ignores this; the model
+    # is selected when you start the server with start_server.sh)
+    model: "local-model"
+
+  # ---- Fallback: Groq free tier -------------------------------------------
+  # The agent automatically falls back to Groq when the local server is
+  # unreachable or returns an error.
+  # Free tier limits (as of 2025): 30 RPM, 14 400 RPD, 6 000 TPM for
+  # llama-3.1-8b-instant.
+  groq:
+    # Replace with your key from https://console.groq.com/keys
+    api_key: "YOUR_GROQ_API_KEY"
+    # Best free-tier model for tool-calling: fast and capable
+    model: "llama-3.1-8b-instant"
+    # Alternative if you need more reasoning power (lower RPD limit):
+    # model: "llama-3.3-70b-versatile"
