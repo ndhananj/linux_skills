@@ -44,7 +44,7 @@ def test_prompt_matrix_routes_to_expected_skills(tmp_path: Path):
         expected_skills = set(case["expected_skills"])
 
         selected = agent._select_tool_configs(prompt)
-        selected_skills = {cfg["function"]["name"].split("__", 1)[0] for cfg in selected}
+        selected_skills = {cfg["function"]["name"].split("__", 1)[0] for cfg in selected["tools"]}
 
         if selected_skills.isdisjoint(expected_skills):
             failures.append(
@@ -52,6 +52,21 @@ def test_prompt_matrix_routes_to_expected_skills(tmp_path: Path):
             )
 
     assert not failures, "\n".join(failures)
+
+
+def test_largest_files_prompt_uses_file_size_slice(tmp_path: Path):
+    LinuxSkillsAgent = _load_agent_class()
+    cfg_path = _make_temp_config(tmp_path, tracing_enabled=False)
+    agent = LinuxSkillsAgent(config_path=str(cfg_path))
+
+    selected = agent._select_tool_configs("Show me the 10 largest files in .")
+    names = [cfg["function"]["name"] for cfg in selected["tools"]]
+
+    assert selected["mode"] == "per_skill_fixed_slice"
+    assert selected["intent_family"] == "file_size_listing"
+    assert "file_system__find_files" in names
+    assert "shell_scripting__run_shell_command" in names
+    assert "text_processing__concatenate_files" not in names
 
 
 def test_tracing_logs_tool_calls(tmp_path: Path):

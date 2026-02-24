@@ -156,6 +156,7 @@ Each skill module contains a `SKILL.md` (human-readable reference and agent inst
 | `agent.max_tool_output_chars` | Maximum characters of tool output included in the LLM context (default 4000). |
 | `agent.max_tools_per_request` | Maximum tool schemas sent per request (default 16, tuned for 4K context). |
 | `agent.min_tools_per_request` | Auto-downsize floor for retrying after context overflow (default 4). |
+| `agent.shortlisting.mode` | Tool shortlisting strategy (default `per_skill_fixed_slice` with score-based fallback). |
 | `llm.local.base_url` | URL of the local llama.cpp server. |
 | `llm.local.model` | Model name sent in the request (llama.cpp ignores this). |
 | `llm.groq.api_key` | Optional in `config.local.yaml` only (or set `GROQ_API_KEY` env var). |

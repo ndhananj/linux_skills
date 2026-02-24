@@ -60,7 +60,8 @@ def test_live_llm_prompt_contracts(tmp_path: Path):
         expected_any_tools = set(case.get("expected_any_tools", []))
 
         system_prompt = agent.cfg["agent"]["system_prompt"]
-        active_tools = agent._select_tool_configs(prompt)
+        selected = agent._select_tool_configs(prompt)
+        active_tools = selected["tools"]
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": prompt},

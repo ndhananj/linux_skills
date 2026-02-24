@@ -33,6 +33,12 @@ agent:
   # Auto-downsize floor if the model still reports context overflow.
   min_tools_per_request: 4
 
+  shortlisting:
+    # per_skill_fixed_slice keeps tool payload tiny for common ops prompts.
+    mode: "per_skill_fixed_slice"
+    # score_based remains the fallback for unmatched prompts.
+    fallback_mode: "score_based"
+
   tracing:
     # Persist JSONL traces for LLM requests/responses and tool calls.
     enabled: true

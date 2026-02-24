@@ -158,7 +158,8 @@ class LinuxSkillsAgent:
             return direct
 
         system_prompt = self.cfg["agent"]["system_prompt"]
-        active_tools = self._select_tool_configs(prompt)
+        selection = self._select_tool_configs(prompt)
+        active_tools = selection["tools"]
         messages: List[Dict[str, Any]] = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": prompt},
@@ -171,6 +172,9 @@ class LinuxSkillsAgent:
                 "active_tools": len(active_tools),
                 "total_tools": len(self._tool_configs),
                 "active_tool_names": [t["function"]["name"] for t in active_tools],
+                "selection_mode": selection["mode"],
+                "intent_family": selection.get("intent_family"),
+                "excluded_tools": selection.get("excluded_tools", []),
             },
         )
 
@@ -334,11 +338,29 @@ class LinuxSkillsAgent:
             lines.append(f"- {skill} ({tool_count} tools)")
         return "\n".join(lines)
 
-    def _select_tool_configs(self, prompt: str) -> List[Dict[str, Any]]:
+    def _select_tool_configs(self, prompt: str) -> Dict[str, Any]:
         """Select a context-safe subset of tools for the current prompt."""
         default_max = int(self.cfg.get("agent", {}).get("max_tools_per_request", 24))
         if default_max <= 0:
-            return self._tool_configs
+            return {"tools": self._tool_configs, "mode": "all", "intent_family": None, "excluded_tools": []}
+
+        shortlisting_cfg = self.cfg.get("agent", {}).get("shortlisting", {})
+        mode = shortlisting_cfg.get("mode", "per_skill_fixed_slice")
+        intent_family = self._detect_intent_family(prompt)
+        if mode == "per_skill_fixed_slice" and intent_family is not None:
+            slice_names = self._fixed_slice_tool_names(intent_family)
+            if slice_names:
+                selected_names = [name for name in slice_names if name in self._tool_config_by_name]
+                selected_names = selected_names[:default_max]
+                selected = [self._tool_config_by_name[name] for name in selected_names]
+                if selected:
+                    excluded = self._excluded_tools_for_family(intent_family)
+                    return {
+                        "tools": selected,
+                        "mode": "per_skill_fixed_slice",
+                        "intent_family": intent_family,
+                        "excluded_tools": excluded,
+                    }
 
         normalized_prompt = prompt.lower().replace("ci/cd", "cicd")
         tokens = set(re.findall(r"[a-zA-Z0-9_]{3,}", normalized_prompt))
@@ -382,7 +404,121 @@ class LinuxSkillsAgent:
                     break
 
         selected = [self._tool_config_by_name[name] for name in selected_names if name in self._tool_config_by_name]
-        return selected if selected else self._tool_configs[:default_max]
+        final_tools = selected if selected else self._tool_configs[:default_max]
+        return {
+            "tools": final_tools,
+            "mode": "score_based",
+            "intent_family": intent_family,
+            "excluded_tools": [],
+        }
+
+    def _detect_intent_family(self, prompt: str) -> Optional[str]:
+        prompt_lc = prompt.lower()
+        conceptual_verbs = (
+            "define",
+            "recall",
+            "outline",
+            "describe",
+            "recognize",
+            "distinguish",
+            "list",
+            "explain",
+            "install",
+        )
+        if any(prompt_lc.startswith(v + " ") for v in conceptual_verbs):
+            return None
+
+        operational_patterns = (
+            r"\bshow\b",
+            r"\bfind\b",
+            r"\bcheck\b",
+            r"\brun\b",
+            r"\bdisplay\b",
+            r"\btail\b",
+            r"\bstatus\b",
+            r"\btroubleshoot\b",
+            r"\bmonitor\b",
+            r"\btop\s+\d+\b",
+            r"\bshow me\b",
+        )
+        if not any(re.search(p, prompt_lc) for p in operational_patterns):
+            return None
+
+        if (
+            ("largest files" in prompt_lc or "biggest files" in prompt_lc)
+            or ("largest" in prompt_lc and "files" in prompt_lc)
+            or ("top" in prompt_lc and "files" in prompt_lc and ("large" in prompt_lc or "size" in prompt_lc))
+        ):
+            return "file_size_listing"
+        if any(kw in prompt_lc for kw in ["tail", "journal", "syslog", "auth log", "logs"]):
+            return "logging_basic"
+        if any(kw in prompt_lc for kw in ["interfaces", "routing", "dns", "ports", "ifconfig", "netstat", "ip "]):
+            return "networking_basic"
+        if any(kw in prompt_lc for kw in ["process", "service", "cpu", "memory"]) or re.search(r"\btop\s+\d+\b", prompt_lc):
+            return "process_basic"
+        if any(kw in prompt_lc for kw in ["disk", "storage", "mount", "swap", "filesystem", "lsblk"]):
+            return "disk_storage_basic"
+        if any(kw in prompt_lc for kw in ["list files", "find files", "directory", "directories", "ls ", "pwd"]):
+            return "filesystem_navigation"
+        return None
+
+    def _fixed_slice_tool_names(self, family: str) -> List[str]:
+        slices = {
+            "file_size_listing": [
+                "file_system__find_files",
+                "file_system__disk_usage",
+                "file_system__list_directory",
+                "shell_scripting__run_shell_command",
+            ],
+            "filesystem_navigation": [
+                "file_system__list_directory",
+                "file_system__find_files",
+                "file_system__disk_usage",
+                "file_system__disk_free",
+                "file_system__touch_file",
+            ],
+            "logging_basic": [
+                "logging__tail_log",
+                "logging__view_journal",
+                "logging__show_syslog",
+                "logging__search_log",
+                "process_and_service__view_journal",
+            ],
+            "networking_basic": [
+                "networking__show_interfaces",
+                "networking__show_routing_table",
+                "networking__dns_lookup",
+                "networking__show_open_ports",
+                "networking__show_active_connections",
+                "troubleshooting__check_network_connectivity",
+            ],
+            "process_basic": [
+                "process_and_service__show_top_processes",
+                "process_and_service__list_processes",
+                "process_and_service__service_status",
+                "performance__show_top_processes_by_cpu",
+                "performance__show_top_processes_by_memory",
+                "performance__show_memory_usage",
+            ],
+            "disk_storage_basic": [
+                "storage__list_block_devices",
+                "storage__show_mounts",
+                "storage__show_swap_usage",
+                "file_system__disk_free",
+                "file_system__disk_usage",
+            ],
+        }
+        return slices.get(family, [])
+
+    def _excluded_tools_for_family(self, family: str) -> List[str]:
+        exclusions = {
+            "file_size_listing": [
+                "text_processing__concatenate_files",
+                "text_processing__diff_files",
+                "text_processing__join_files",
+            ]
+        }
+        return exclusions.get(family, [])
 
     def _keyword_skill_scores(self, tokens: set[str]) -> Dict[str, int]:
         keyword_map = {
