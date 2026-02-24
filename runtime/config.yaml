@@ -29,7 +29,9 @@ agent:
 
   # Maximum number of tool schemas to include in one LLM request.
   # Keeps default 4K context usable on tiny machines.
-  max_tools_per_request: 24
+  max_tools_per_request: 16
+  # Auto-downsize floor if the model still reports context overflow.
+  min_tools_per_request: 4
 
   tracing:
     # Persist JSONL traces for LLM requests/responses and tool calls.

@@ -31,7 +31,6 @@ def _server_reachable(host: str = "127.0.0.1", port: int = 8080, timeout: float 
 
 def _make_live_config(tmp_path: Path) -> Path:
     cfg = yaml.safe_load((RUNTIME_DIR / "config.yaml").read_text(encoding="utf-8"))
-    cfg.setdefault("agent", {})["max_tools_per_request"] = 48
     cfg.setdefault("agent", {}).setdefault("tracing", {})["enabled"] = True
     cfg["agent"]["tracing"]["log_dir"] = str(tmp_path / "logs")
 

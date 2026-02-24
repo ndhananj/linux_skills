@@ -213,52 +213,73 @@ class LinuxSkillsAgent:
         """Call the LLM; fall back to Groq on connection error."""
         local_model = self.cfg["llm"]["local"]["model"]
         groq_model = self.cfg["llm"].get("groq", {}).get("model", "llama-3.1-8b-instant")
+        candidate_tools = list(tool_configs)
+        minimum_tools = int(self.cfg.get("agent", {}).get("min_tools_per_request", 4))
+        if minimum_tools < 1:
+            minimum_tools = 1
 
         # --- Try local llama.cpp server ---
-        try:
-            print(_c(_YELLOW, f"[agent]   → local ({local_model})"))
-            self._trace(
-                "llm_request",
-                {
-                    "backend": "local",
-                    "model": local_model,
-                    "message_count": len(messages),
-                    "tool_count": len(tool_configs),
-                },
-            )
-            resp = self._local_client.chat.completions.create(
-                model=local_model,
-                messages=messages,
-                tools=tool_configs,
-                tool_choice="auto",
-            )
-            self._trace(
-                "llm_response",
-                {
-                    "backend": "local",
-                    "model": local_model,
-                    "tool_calls": self._extract_tool_call_names(resp.choices[0].message),
-                },
-            )
-            return resp.choices[0].message
-        except (openai.APIConnectionError, openai.APIStatusError) as local_err:
-            print(_c(_RED, f"[agent]   Local LLM error: {local_err}"))
-            self._trace(
-                "llm_error",
-                {
-                    "backend": "local",
-                    "model": local_model,
-                    "error": str(local_err),
-                },
-            )
-            err_text = str(local_err)
-            if "exceeds the available context size" in err_text:
-                raise RuntimeError(
-                    "Local LLM context window is too small for the loaded tool set. "
-                    "Restart the local server with a larger context, e.g.:\n"
-                    "  LLAMA_CTX_SIZE=32768 bash scripts/start_server.sh\n"
-                    "Then re-run agent.py."
-                ) from local_err
+        while True:
+            try:
+                print(_c(_YELLOW, f"[agent]   → local ({local_model})"))
+                self._trace(
+                    "llm_request",
+                    {
+                        "backend": "local",
+                        "model": local_model,
+                        "message_count": len(messages),
+                        "tool_count": len(candidate_tools),
+                    },
+                )
+                resp = self._local_client.chat.completions.create(
+                    model=local_model,
+                    messages=messages,
+                    tools=candidate_tools,
+                    tool_choice="auto",
+                )
+                self._trace(
+                    "llm_response",
+                    {
+                        "backend": "local",
+                        "model": local_model,
+                        "tool_calls": self._extract_tool_call_names(resp.choices[0].message),
+                    },
+                )
+                return resp.choices[0].message
+            except (openai.APIConnectionError, openai.APIStatusError) as local_err:
+                print(_c(_RED, f"[agent]   Local LLM error: {local_err}"))
+                self._trace(
+                    "llm_error",
+                    {
+                        "backend": "local",
+                        "model": local_model,
+                        "tool_count": len(candidate_tools),
+                        "error": str(local_err),
+                    },
+                )
+                err_text = str(local_err)
+                context_overflow = "exceeds the available context size" in err_text
+                if context_overflow and len(candidate_tools) > minimum_tools:
+                    next_count = max(minimum_tools, len(candidate_tools) // 2)
+                    if next_count >= len(candidate_tools):
+                        next_count = len(candidate_tools) - 1
+                    candidate_tools = candidate_tools[:next_count]
+                    self._trace(
+                        "tool_context_downsize",
+                        {
+                            "reason": "context_overflow",
+                            "new_tool_count": len(candidate_tools),
+                        },
+                    )
+                    continue
+                if context_overflow:
+                    raise RuntimeError(
+                        "Local LLM context window is too small even after auto-reducing tool schemas. "
+                        "Restart with larger context, e.g.:\n"
+                        "  LLAMA_CTX_SIZE=32768 bash scripts/start_server.sh\n"
+                        "or configure GROQ_API_KEY for fallback."
+                    ) from local_err
+                break
 
         # --- Fall back to Groq ---
         if self._groq_client is None:
@@ -279,7 +300,7 @@ class LinuxSkillsAgent:
         resp = self._groq_client.chat.completions.create(
             model=groq_model,
             messages=messages,
-            tools=tool_configs,
+            tools=candidate_tools,
             tool_choice="auto",
         )
         self._trace(
@@ -318,7 +339,7 @@ class LinuxSkillsAgent:
         tokens = set(re.findall(r"[a-zA-Z0-9_]{3,}", normalized_prompt))
         stop = {"the", "and", "for", "with", "that", "this", "from", "into", "show", "list", "have"}
         tokens = {tok for tok in tokens if tok not in stop}
-        keyword_skills = self._keyword_matched_skills(tokens)
+        keyword_skill_scores = self._keyword_skill_scores(tokens)
 
         scored: List[tuple[int, str]] = []
         for full_name in self._tool_functions.keys():
@@ -326,8 +347,7 @@ class LinuxSkillsAgent:
             score = 0
             if skill in tokens:
                 score += 5
-            if skill in keyword_skills:
-                score += 5
+            score += keyword_skill_scores.get(skill, 0) * 4
             func_parts = set(func.split("_"))
             score += len(func_parts.intersection(tokens)) * 2
             if score > 0:
@@ -359,7 +379,7 @@ class LinuxSkillsAgent:
         selected = [self._tool_config_by_name[name] for name in selected_names if name in self._tool_config_by_name]
         return selected if selected else self._tool_configs[:default_max]
 
-    def _keyword_matched_skills(self, tokens: set[str]) -> set[str]:
+    def _keyword_skill_scores(self, tokens: set[str]) -> Dict[str, int]:
         keyword_map = {
             "kernel": {"boot_and_kernel"},
             "bootloader": {"boot_and_kernel"},
@@ -369,8 +389,6 @@ class LinuxSkillsAgent:
             "bios": {"boot_and_kernel"},
             "uefi": {"boot_and_kernel"},
             "boot": {"boot_and_kernel", "file_system"},
-            "directory": {"file_system"},
-            "directories": {"file_system"},
             "proc": {"file_system"},
             "dev": {"file_system"},
             "var": {"file_system"},
@@ -390,8 +408,6 @@ class LinuxSkillsAgent:
             "distribution": {"troubleshooting"},
             "distributions": {"troubleshooting"},
             "cloud": {"troubleshooting"},
-            "virtual": {"troubleshooting"},
-            "machine": {"troubleshooting"},
             "dns": {"networking", "troubleshooting"},
             "dhcp": {"networking"},
             "firewall": {"security"},
@@ -401,6 +417,8 @@ class LinuxSkillsAgent:
             "nftables": {"security"},
             "pam": {"security"},
             "ldap": {"security"},
+            "authentication": {"security"},
+            "auth": {"security"},
             "crypto": {"security"},
             "cryptography": {"security"},
             "threat": {"security"},
@@ -442,10 +460,11 @@ class LinuxSkillsAgent:
             "log": {"logging"},
             "troubleshoot": {"troubleshooting"},
         }
-        matched: set[str] = set()
+        scores: Dict[str, int] = {}
         for token in tokens:
-            matched.update(keyword_map.get(token, set()))
-        return matched
+            for skill in keyword_map.get(token, set()):
+                scores[skill] = scores.get(skill, 0) + 1
+        return scores
 
     def _extract_tool_call_names(self, response_msg: Any) -> List[str]:
         names: List[str] = []
