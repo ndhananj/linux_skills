@@ -22,7 +22,7 @@ cases:
   - id: logging
     prompt: "Show the last 50 lines of syslog and then view recent journal entries."
     expected_skill: "logging"
-    expected_any_tools: ["logging__tail_log", "logging__view_journal"]
+    expected_any_tools: ["logging__tail_log", "logging__view_journal", "logging__show_syslog"]
 
   - id: networking
     prompt: "Show current interfaces and routing table, then do a DNS lookup for openai.com."
