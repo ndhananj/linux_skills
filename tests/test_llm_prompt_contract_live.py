@@ -66,7 +66,7 @@ def test_live_llm_prompt_contracts(tmp_path: Path):
             {"role": "user", "content": prompt},
         ]
 
-        response_msg = agent._complete(messages, active_tools)
+        response_msg = agent._complete(messages, active_tools, tool_choice="required")
         tool_calls = list(getattr(response_msg, "tool_calls", []) or [])
         names = []
         for tc in tool_calls:

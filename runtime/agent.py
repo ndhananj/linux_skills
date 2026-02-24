@@ -209,7 +209,12 @@ class LinuxSkillsAgent:
     # LLM completion with local → Groq fallback
     # ------------------------------------------------------------------
 
-    def _complete(self, messages: List[Dict[str, Any]], tool_configs: List[Dict[str, Any]]):
+    def _complete(
+        self,
+        messages: List[Dict[str, Any]],
+        tool_configs: List[Dict[str, Any]],
+        tool_choice: str = "auto",
+    ):
         """Call the LLM; fall back to Groq on connection error."""
         local_model = self.cfg["llm"]["local"]["model"]
         groq_model = self.cfg["llm"].get("groq", {}).get("model", "llama-3.1-8b-instant")
@@ -235,7 +240,7 @@ class LinuxSkillsAgent:
                     model=local_model,
                     messages=messages,
                     tools=candidate_tools,
-                    tool_choice="auto",
+                    tool_choice=tool_choice,
                 )
                 self._trace(
                     "llm_response",
@@ -301,7 +306,7 @@ class LinuxSkillsAgent:
             model=groq_model,
             messages=messages,
             tools=candidate_tools,
-            tool_choice="auto",
+            tool_choice=tool_choice,
         )
         self._trace(
             "llm_response",
