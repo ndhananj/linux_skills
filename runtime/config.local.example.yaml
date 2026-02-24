@@ -1,0 +1,7 @@
+# Untracked local overrides for secrets and host-specific settings.
+# Copy to runtime/config.local.yaml and edit values.
+
+llm:
+  groq:
+    # Required only if you want cloud fallback when local LLM is unavailable.
+    api_key: "YOUR_GROQ_API_KEY"
