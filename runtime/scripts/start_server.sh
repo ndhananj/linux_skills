@@ -48,7 +48,7 @@ fi
 # ---------------------------------------------------------------------------
 # Server parameters tuned for 1 vCPU / 1 GB RAM
 # ---------------------------------------------------------------------------
-HOST="0.0.0.0"
+HOST="127.0.0.1"
 PORT="8080"
 CTX_SIZE=4096          # context window in tokens
 N_THREADS="$(nproc)"   # use all available CPU threads

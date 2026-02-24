@@ -29,7 +29,19 @@ echo
 # 1. System packages
 # ---------------------------------------------------------------------------
 yellow "1/5  Installing system packages..."
-sudo apt-get update -qq
+if ! sudo apt-get update -qq; then
+    red "apt-get update failed."
+    yellow "This is usually caused by a broken third-party APT repository."
+    yellow "Fix or disable the failing repo, then re-run this installer."
+    echo
+    echo "Quick diagnosis:"
+    echo "  grep -R \"^deb .*packagecloud.io/shiftkey\" /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null"
+    echo
+    echo "If you no longer need that repo, remove it:"
+    echo "  sudo rm -f /etc/apt/sources.list.d/*shiftkey*.list"
+    echo "  sudo apt-get update"
+    exit 1
+fi
 sudo apt-get install -y --no-install-recommends \
     build-essential \
     cmake \

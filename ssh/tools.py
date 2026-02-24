@@ -13,7 +13,14 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "runtime"))
 from command_runner import run_command
 
 
-def run_remote_command(host: str, user: str, command: str, key_path: str = None, port: int = 22) -> str:
+def run_remote_command(
+    host: str,
+    user: str,
+    command: str,
+    key_path: str = None,
+    port: int = 22,
+    strict_host_key_checking: bool = True,
+) -> str:
     """Execute a command on a remote host via SSH (non-interactive).
 
     host: Hostname or IP address of the remote host.
@@ -22,14 +29,23 @@ def run_remote_command(host: str, user: str, command: str, key_path: str = None,
     key_path: Path to the private key file for authentication.
     port: SSH port number on the remote host.
     """
-    cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-p", str(port)]
+    strict_value = "yes" if strict_host_key_checking else "no"
+    cmd = ["ssh", "-o", f"StrictHostKeyChecking={strict_value}", "-p", str(port)]
     if key_path:
         cmd.extend(["-i", key_path])
     cmd.extend([f"{user}@{host}", command])
     return run_command(cmd)
 
 
-def copy_to_remote(local_path: str, host: str, user: str, remote_path: str, key_path: str = None, port: int = 22) -> str:
+def copy_to_remote(
+    local_path: str,
+    host: str,
+    user: str,
+    remote_path: str,
+    key_path: str = None,
+    port: int = 22,
+    strict_host_key_checking: bool = True,
+) -> str:
     """Copy a file or directory to a remote host using SCP.
 
     local_path: Local path to the file or directory to copy.
@@ -39,14 +55,23 @@ def copy_to_remote(local_path: str, host: str, user: str, remote_path: str, key_
     key_path: Path to the private key file for authentication.
     port: SSH port number on the remote host.
     """
-    cmd = ["scp", "-o", "StrictHostKeyChecking=no", "-P", str(port)]
+    strict_value = "yes" if strict_host_key_checking else "no"
+    cmd = ["scp", "-o", f"StrictHostKeyChecking={strict_value}", "-P", str(port)]
     if key_path:
         cmd.extend(["-i", key_path])
     cmd.extend([local_path, f"{user}@{host}:{remote_path}"])
     return run_command(cmd)
 
 
-def copy_from_remote(host: str, user: str, remote_path: str, local_path: str, key_path: str = None, port: int = 22) -> str:
+def copy_from_remote(
+    host: str,
+    user: str,
+    remote_path: str,
+    local_path: str,
+    key_path: str = None,
+    port: int = 22,
+    strict_host_key_checking: bool = True,
+) -> str:
     """Copy a file or directory from a remote host using SCP.
 
     host: Hostname or IP address of the remote host.
@@ -56,14 +81,23 @@ def copy_from_remote(host: str, user: str, remote_path: str, local_path: str, ke
     key_path: Path to the private key file for authentication.
     port: SSH port number on the remote host.
     """
-    cmd = ["scp", "-o", "StrictHostKeyChecking=no", "-P", str(port)]
+    strict_value = "yes" if strict_host_key_checking else "no"
+    cmd = ["scp", "-o", f"StrictHostKeyChecking={strict_value}", "-P", str(port)]
     if key_path:
         cmd.extend(["-i", key_path])
     cmd.extend([f"{user}@{host}:{remote_path}", local_path])
     return run_command(cmd)
 
 
-def sync_to_remote(local_path: str, host: str, user: str, remote_path: str, key_path: str = None, delete: bool = False) -> str:
+def sync_to_remote(
+    local_path: str,
+    host: str,
+    user: str,
+    remote_path: str,
+    key_path: str = None,
+    delete: bool = False,
+    strict_host_key_checking: bool = True,
+) -> str:
     """Synchronise a local directory to a remote host using rsync.
 
     local_path: Local directory to synchronise.
@@ -73,7 +107,8 @@ def sync_to_remote(local_path: str, host: str, user: str, remote_path: str, key_
     key_path: Path to the private key file for authentication.
     delete: When True, delete files on the remote that are not in the local source.
     """
-    ssh_cmd = "ssh -o StrictHostKeyChecking=no"
+    strict_value = "yes" if strict_host_key_checking else "no"
+    ssh_cmd = f"ssh -o StrictHostKeyChecking={strict_value}"
     if key_path:
         ssh_cmd += f" -i {key_path}"
     cmd = ["rsync", "-avz", "-e", ssh_cmd]

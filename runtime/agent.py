@@ -82,6 +82,9 @@ class LinuxSkillsAgent:
 
     def _make_groq_client(self) -> Optional[openai.OpenAI]:
         gc = self.cfg["llm"].get("groq", {})
+        if not gc.get("enabled", False):
+            print(_c(_YELLOW, "[agent] Groq fallback disabled in config (llm.groq.enabled=false)."))
+            return None
         key = gc.get("api_key", "")
         if not key or key == "YOUR_GROQ_API_KEY":
             print(_c(_YELLOW, "[agent] Groq API key not set — fallback disabled."))
