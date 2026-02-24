@@ -31,6 +31,12 @@ agent:
   # Keeps default 4K context usable on tiny machines.
   max_tools_per_request: 24
 
+  tracing:
+    # Persist JSONL traces for LLM requests/responses and tool calls.
+    enabled: true
+    # Relative path from runtime/ by default.
+    log_dir: "logs"
+
 # ---------------------------------------------------------------------------
 # LLM back-ends
 # ---------------------------------------------------------------------------

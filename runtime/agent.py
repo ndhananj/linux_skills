@@ -37,6 +37,7 @@ import yaml
 # The tool registry lives in the same directory as this file
 sys.path.insert(0, os.path.dirname(__file__))
 from tool_registry import discover_skills
+from tracing import JsonlTracer, default_log_dir, make_default_run_id
 
 # ---------------------------------------------------------------------------
 # Colour helpers (degrade gracefully on non-ANSI terminals)
@@ -70,6 +71,8 @@ class LinuxSkillsAgent:
             tc["function"]["name"]: tc for tc in self._tool_configs if tc.get("function", {}).get("name")
         }
         self._skills = sorted({name.split("__", 1)[0] for name in self._tool_functions.keys()})
+        self._runtime_dir = os.path.dirname(__file__)
+        self._tracer = self._make_tracer()
         print(_c(_GREEN, f"[agent] Ready — {len(self._tool_configs)} tools loaded."))
 
     # ------------------------------------------------------------------
@@ -107,6 +110,22 @@ class LinuxSkillsAgent:
         lc = self.cfg["llm"]["local"]
         return openai.OpenAI(base_url=lc["base_url"], api_key=lc.get("api_key", "local-key"))
 
+    def _make_tracer(self) -> Optional[JsonlTracer]:
+        tracing_cfg = self.cfg.get("agent", {}).get("tracing", {})
+        if not tracing_cfg.get("enabled", True):
+            return None
+        run_id = make_default_run_id()
+        log_dir = tracing_cfg.get("log_dir") or default_log_dir(self._runtime_dir)
+        tracer = JsonlTracer(log_dir=log_dir, run_id=run_id)
+        tracer.log(
+            "agent_start",
+            {
+                "tools_loaded": len(self._tool_configs),
+                "skills_loaded": len(self._skills),
+            },
+        )
+        return tracer
+
     def _make_groq_client(self) -> Optional[openai.OpenAI]:
         gc = self.cfg["llm"].get("groq", {})
         if not gc.get("enabled", True):
@@ -131,8 +150,10 @@ class LinuxSkillsAgent:
 
     def run(self, prompt: str) -> str:
         """Run the agent loop for *prompt* and return the final answer."""
+        self._trace("prompt_received", {"prompt": prompt})
         direct = self._try_builtin_answer(prompt)
         if direct is not None:
+            self._trace("prompt_built_in_response", {"prompt": prompt, "answer": direct})
             print(_c(_GREEN, "\n[agent] Final answer:\n") + direct)
             return direct
 
@@ -144,6 +165,14 @@ class LinuxSkillsAgent:
         ]
 
         print(_c(_YELLOW, f"[agent] Tool schemas in context: {len(active_tools)}/{len(self._tool_configs)}"))
+        self._trace(
+            "tool_schema_selection",
+            {
+                "active_tools": len(active_tools),
+                "total_tools": len(self._tool_configs),
+                "active_tool_names": [t["function"]["name"] for t in active_tools],
+            },
+        )
 
         for turn in range(1, self.MAX_TURNS + 1):
             print(_c(_CYAN, f"\n[agent] Turn {turn}/{self.MAX_TURNS}"))
@@ -188,15 +217,40 @@ class LinuxSkillsAgent:
         # --- Try local llama.cpp server ---
         try:
             print(_c(_YELLOW, f"[agent]   → local ({local_model})"))
+            self._trace(
+                "llm_request",
+                {
+                    "backend": "local",
+                    "model": local_model,
+                    "message_count": len(messages),
+                    "tool_count": len(tool_configs),
+                },
+            )
             resp = self._local_client.chat.completions.create(
                 model=local_model,
                 messages=messages,
                 tools=tool_configs,
                 tool_choice="auto",
             )
+            self._trace(
+                "llm_response",
+                {
+                    "backend": "local",
+                    "model": local_model,
+                    "tool_calls": self._extract_tool_call_names(resp.choices[0].message),
+                },
+            )
             return resp.choices[0].message
         except (openai.APIConnectionError, openai.APIStatusError) as local_err:
             print(_c(_RED, f"[agent]   Local LLM error: {local_err}"))
+            self._trace(
+                "llm_error",
+                {
+                    "backend": "local",
+                    "model": local_model,
+                    "error": str(local_err),
+                },
+            )
             err_text = str(local_err)
             if "exceeds the available context size" in err_text:
                 raise RuntimeError(
@@ -213,11 +267,28 @@ class LinuxSkillsAgent:
                 "Set GROQ_API_KEY or llm.groq.api_key in config.local.yaml."
             )
         print(_c(_YELLOW, f"[agent]   → Groq fallback ({groq_model})"))
+        self._trace(
+            "llm_request",
+            {
+                "backend": "groq",
+                "model": groq_model,
+                "message_count": len(messages),
+                "tool_count": len(tool_configs),
+            },
+        )
         resp = self._groq_client.chat.completions.create(
             model=groq_model,
             messages=messages,
             tools=tool_configs,
             tool_choice="auto",
+        )
+        self._trace(
+            "llm_response",
+            {
+                "backend": "groq",
+                "model": groq_model,
+                "tool_calls": self._extract_tool_call_names(resp.choices[0].message),
+            },
         )
         return resp.choices[0].message
 
@@ -243,15 +314,19 @@ class LinuxSkillsAgent:
         if default_max <= 0:
             return self._tool_configs
 
-        tokens = set(re.findall(r"[a-zA-Z_]{3,}", prompt.lower()))
+        normalized_prompt = prompt.lower().replace("ci/cd", "cicd")
+        tokens = set(re.findall(r"[a-zA-Z0-9_]{3,}", normalized_prompt))
         stop = {"the", "and", "for", "with", "that", "this", "from", "into", "show", "list", "have"}
         tokens = {tok for tok in tokens if tok not in stop}
+        keyword_skills = self._keyword_matched_skills(tokens)
 
         scored: List[tuple[int, str]] = []
         for full_name in self._tool_functions.keys():
             skill, func = full_name.split("__", 1)
             score = 0
             if skill in tokens:
+                score += 5
+            if skill in keyword_skills:
                 score += 5
             func_parts = set(func.split("_"))
             score += len(func_parts.intersection(tokens)) * 2
@@ -284,6 +359,108 @@ class LinuxSkillsAgent:
         selected = [self._tool_config_by_name[name] for name in selected_names if name in self._tool_config_by_name]
         return selected if selected else self._tool_configs[:default_max]
 
+    def _keyword_matched_skills(self, tokens: set[str]) -> set[str]:
+        keyword_map = {
+            "kernel": {"boot_and_kernel"},
+            "bootloader": {"boot_and_kernel"},
+            "grub": {"boot_and_kernel"},
+            "dracut": {"boot_and_kernel"},
+            "initramfs": {"boot_and_kernel"},
+            "bios": {"boot_and_kernel"},
+            "uefi": {"boot_and_kernel"},
+            "boot": {"boot_and_kernel", "file_system"},
+            "directory": {"file_system"},
+            "directories": {"file_system"},
+            "proc": {"file_system"},
+            "dev": {"file_system"},
+            "var": {"file_system"},
+            "filesystem": {"file_system", "storage"},
+            "partition": {"storage"},
+            "raid": {"storage"},
+            "lvm": {"storage"},
+            "iscsi": {"storage"},
+            "mount": {"storage", "file_system"},
+            "permission": {"user_and_group", "file_system"},
+            "chmod": {"user_and_group"},
+            "chown": {"user_and_group"},
+            "chgrp": {"user_and_group"},
+            "network": {"networking", "troubleshooting"},
+            "ipv4": {"networking"},
+            "ipv6": {"networking"},
+            "distribution": {"troubleshooting"},
+            "distributions": {"troubleshooting"},
+            "cloud": {"troubleshooting"},
+            "virtual": {"troubleshooting"},
+            "machine": {"troubleshooting"},
+            "dns": {"networking", "troubleshooting"},
+            "dhcp": {"networking"},
+            "firewall": {"security"},
+            "waf": {"security"},
+            "iptables": {"security"},
+            "ufw": {"security"},
+            "nftables": {"security"},
+            "pam": {"security"},
+            "ldap": {"security"},
+            "crypto": {"security"},
+            "cryptography": {"security"},
+            "threat": {"security"},
+            "cia": {"security"},
+            "container": {"containerization"},
+            "docker": {"containerization"},
+            "process": {"process_and_service"},
+            "daemon": {"process_and_service"},
+            "systemd": {"process_and_service", "logging", "scheduling"},
+            "journalctl": {"logging", "process_and_service"},
+            "service": {"process_and_service"},
+            "script": {"shell_scripting", "text_processing"},
+            "awk": {"text_processing", "file_system"},
+            "sed": {"text_processing", "file_system"},
+            "grep": {"text_processing", "file_system"},
+            "egrep": {"text_processing"},
+            "find": {"file_system"},
+            "tee": {"shell_scripting", "text_processing"},
+            "git": {"version_control"},
+            "terraform": {"iac_and_cicd"},
+            "iac": {"iac_and_cicd"},
+            "cicd": {"iac_and_cicd"},
+            "package": {"package_management"},
+            "apt": {"package_management"},
+            "yum": {"package_management"},
+            "pacman": {"package_management"},
+            "performance": {"performance", "troubleshooting"},
+            "cpu": {"performance"},
+            "memory": {"performance"},
+            "swap": {"storage", "performance"},
+            "hardware": {"troubleshooting", "performance"},
+            "lspci": {"troubleshooting"},
+            "lsusb": {"troubleshooting"},
+            "dmidecode": {"troubleshooting"},
+            "schedule": {"scheduling"},
+            "cron": {"scheduling"},
+            "timer": {"scheduling"},
+            "resolved": {"troubleshooting"},
+            "log": {"logging"},
+            "troubleshoot": {"troubleshooting"},
+        }
+        matched: set[str] = set()
+        for token in tokens:
+            matched.update(keyword_map.get(token, set()))
+        return matched
+
+    def _extract_tool_call_names(self, response_msg: Any) -> List[str]:
+        names: List[str] = []
+        for tc in getattr(response_msg, "tool_calls", []) or []:
+            fn = getattr(tc, "function", None)
+            name = getattr(fn, "name", None)
+            if isinstance(name, str):
+                names.append(name)
+        return names
+
+    def _trace(self, event: str, payload: Optional[Dict[str, Any]] = None) -> None:
+        if self._tracer is None:
+            return
+        self._tracer.log(event=event, payload=payload or {})
+
     # ------------------------------------------------------------------
     # Tool dispatch
     # ------------------------------------------------------------------
@@ -297,6 +474,7 @@ class LinuxSkillsAgent:
             args = {}
 
         print(_c(_CYAN, f"[agent]   tool: {name}({args})"))
+        self._trace("tool_call", {"name": name, "args": args})
 
         func = self._tool_functions.get(name)
         if func is None:
@@ -314,6 +492,15 @@ class LinuxSkillsAgent:
             output = output[:max_chars] + f"\n... [truncated to {max_chars} chars]"
 
         print(textwrap.indent(output[:200], "    "))
+        self._trace(
+            "tool_result",
+            {
+                "name": name,
+                "output_preview": output[:200],
+                "output_chars": len(output),
+                "is_error": output.startswith("ERROR"),
+            },
+        )
         return output
 
 

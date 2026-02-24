@@ -189,3 +189,26 @@ use one of these paths:
 2. Bigger machine path: restart with larger context, e.g. `LLAMA_CTX_SIZE=32768 bash runtime/scripts/start_server.sh`.
 
 By default, `agent.py` now sends only a context-safe subset of tools per request and handles skill-list prompts locally, so common invocations work on 4K without extra flags.
+
+---
+
+## Tool Call Tracing And Expectation Tests
+
+`agent.py` writes structured JSONL traces by default to:
+
+- `runtime/logs/agent_trace_<timestamp>.jsonl`
+
+Trace events include:
+
+- `llm_request` (backend, model, message/tool counts)
+- `llm_response` (tool call names requested by the LLM)
+- `tool_call` and `tool_result` (name, args, output preview)
+
+The log directory is gitignored (`runtime/logs/`).
+
+Run the expectation tests (includes the full Entry/Beginner/Intermediate/Advanced matrix in `tests/fixtures/llm_tool_call_expectations.yaml`):
+
+```bash
+cd linux_skills
+pytest -q tests/test_llm_tool_call_routing.py
+```

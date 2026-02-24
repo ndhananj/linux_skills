@@ -6,6 +6,7 @@
 runtime/vendor/
 runtime/models/
 runtime/llama-server
+runtime/logs/
 
 # --- Local configuration overrides (may contain API keys) ---
 runtime/config.yaml
