@@ -26,9 +26,26 @@ echo  "Runtime   : $RUNTIME_DIR"
 echo
 
 # ---------------------------------------------------------------------------
+# 0. Cleanup checks
+# ---------------------------------------------------------------------------
+yellow "1/6  Running cleanup checks..."
+
+if [ -L "$RUNTIME_DIR/llama-server" ] && [ ! -e "$RUNTIME_DIR/llama-server" ]; then
+    yellow "     Removing broken llama-server symlink"
+    rm -f "$RUNTIME_DIR/llama-server"
+fi
+
+if [ -d "$VENDOR_DIR/llama.cpp/build" ] && [ -f "$VENDOR_DIR/llama.cpp/build/CMakeCache.txt" ]; then
+    if ! grep -q "$VENDOR_DIR/llama.cpp" "$VENDOR_DIR/llama.cpp/build/CMakeCache.txt"; then
+        yellow "     Removing stale llama.cpp/build (cache points to a different path)"
+        rm -rf "$VENDOR_DIR/llama.cpp/build"
+    fi
+fi
+
+# ---------------------------------------------------------------------------
 # 1. System packages
 # ---------------------------------------------------------------------------
-yellow "1/5  Installing system packages..."
+yellow "2/6  Installing system packages..."
 if ! sudo apt-get update -qq; then
     red "apt-get update failed."
     yellow "This is usually caused by a broken third-party APT repository."
@@ -55,14 +72,14 @@ sudo apt-get install -y --no-install-recommends \
 # ---------------------------------------------------------------------------
 # 2. Python dependencies
 # ---------------------------------------------------------------------------
-yellow "2/5  Installing Python dependencies..."
+yellow "3/6  Installing Python dependencies..."
 pip3 install --quiet --upgrade pip
 pip3 install --quiet -r "$RUNTIME_DIR/requirements.txt"
 
 # ---------------------------------------------------------------------------
 # 3. Build llama.cpp (CPU-only, no GPU flags needed)
 # ---------------------------------------------------------------------------
-yellow "3/5  Building llama.cpp server..."
+yellow "4/6  Building llama.cpp server..."
 mkdir -p "$VENDOR_DIR"
 LLAMA_DIR="$VENDOR_DIR/llama.cpp"
 
@@ -76,6 +93,13 @@ fi
 # Build only the server binary to keep compile time short on a 1-vCPU VPS
 (
     cd "$LLAMA_DIR"
+    # If the repo was moved/copied, CMake cache can point at an old path and fail.
+    if [ -f build/CMakeCache.txt ]; then
+        if ! grep -q "$LLAMA_DIR" build/CMakeCache.txt; then
+            yellow "     Detected stale CMake cache path — cleaning llama.cpp/build"
+            rm -rf build
+        fi
+    fi
     cmake -B build -DLLAMA_NATIVE=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF 2>&1 | tail -5
     cmake --build build --config Release --target llama-server -j"$(nproc)" 2>&1 | tail -10
 )
@@ -92,13 +116,13 @@ green "     llama-server binary: $SERVER_BIN"
 # ---------------------------------------------------------------------------
 # 4. Create models directory
 # ---------------------------------------------------------------------------
-yellow "4/5  Creating models directory..."
+yellow "5/6  Creating models directory..."
 mkdir -p "$MODELS_DIR"
 
 # ---------------------------------------------------------------------------
 # 5. Remind user about config
 # ---------------------------------------------------------------------------
-yellow "5/5  Restoring and checking configuration..."
+yellow "6/6  Restoring and checking configuration..."
 CONFIG_FILE="$RUNTIME_DIR/config.yaml"
 
 # Recreate runtime/config.yaml from the repository's tracked version so each
