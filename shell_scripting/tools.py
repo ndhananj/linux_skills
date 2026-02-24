@@ -4,11 +4,10 @@ shell_scripting/tools.py — Tools for creating and executing shell scripts.
 
 import sys
 import os
-import subprocess
-import tempfile
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "runtime"))
 from command_runner import run_command
+from os_runner import chmod, expand_user, mkstemp_script, unlink, write_text
 
 
 def run_shell_script(path: str, args: str = None) -> str:
@@ -39,10 +38,9 @@ def create_script(path: str, content: str, executable: bool = True) -> str:
     executable: When True, make the script executable (chmod +x).
     """
     full_content = "#!/usr/bin/env bash\nset -euo pipefail\n\n" + content
-    with open(path, "w") as fh:
-        fh.write(full_content)
+    write_text(path, full_content, mode="w")
     if executable:
-        os.chmod(path, 0o755)
+        chmod(path, 0o755)
     return f"Script created at {path}"
 
 
@@ -51,14 +49,13 @@ def run_inline_script(script: str) -> str:
 
     script: Multi-line shell script content to execute.
     """
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".sh", delete=False) as tmp:
-        tmp.write("#!/usr/bin/env bash\nset -euo pipefail\n\n" + script)
-        tmp_path = tmp.name
+    full_script = "#!/usr/bin/env bash\nset -euo pipefail\n\n" + script
+    tmp_path = mkstemp_script(full_script, suffix=".sh")
     try:
-        os.chmod(tmp_path, 0o700)
+        chmod(tmp_path, 0o700)
         return run_command(["bash", tmp_path])
     finally:
-        os.unlink(tmp_path)
+        unlink(tmp_path)
 
 
 def pipe_commands(commands: str) -> str:
@@ -95,5 +92,5 @@ def show_command_history(lines: int = 20) -> str:
 
     lines: Number of recent history entries to show.
     """
-    history_file = os.path.expanduser("~/.bash_history")
+    history_file = expand_user("~/.bash_history")
     return run_command(["tail", "-n", str(lines), history_file], allow_nonzero=True)

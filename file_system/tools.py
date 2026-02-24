@@ -133,8 +133,13 @@ def largest_files(path: str = ".", limit: int = 10, include_hidden: bool = True)
     except Exception:
         n = 10
 
+    print(
+        f"[python->os] scan path={path} limit={n} include_hidden={include_hidden}",
+        flush=True,
+    )
     top: List[Tuple[int, str]] = []
     skipped = 0
+    scanned = 0
 
     def _onerror(_err):
         nonlocal skipped
@@ -154,11 +159,17 @@ def largest_files(path: str = ".", limit: int = 10, include_hidden: bool = True)
                 continue
             if not os.path.isfile(fp):
                 continue
+            scanned += 1
             item = (int(st.st_size), fp)
             if len(top) < n:
                 heapq.heappush(top, item)
             else:
                 heapq.heappushpop(top, item)
+
+    print(
+        f"[os->python] scanned_files={scanned} skipped={skipped} top_count={len(top)}",
+        flush=True,
+    )
 
     top_sorted = sorted(top, key=lambda x: (-x[0], x[1]))
     lines = []

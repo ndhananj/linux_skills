@@ -7,6 +7,7 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "runtime"))
 from command_runner import run_command
+from os_runner import path_exists
 
 
 def tail_log(path: str, lines: int = 50) -> str:
@@ -104,7 +105,7 @@ def show_auth_log(lines: int = 100) -> str:
     lines: Number of recent lines to show.
     """
     auth_log = "/var/log/auth.log"
-    if not os.path.exists(auth_log):
+    if not path_exists(auth_log):
         auth_log = "/var/log/secure"  # RHEL/CentOS
     return run_command(["tail", "-n", str(lines), auth_log])
 
@@ -115,6 +116,6 @@ def show_syslog(lines: int = 100) -> str:
     lines: Number of recent lines to show.
     """
     syslog = "/var/log/syslog"
-    if not os.path.exists(syslog):
+    if not path_exists(syslog):
         syslog = "/var/log/messages"  # RHEL/CentOS
     return run_command(["tail", "-n", str(lines), syslog])

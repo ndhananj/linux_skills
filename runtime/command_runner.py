@@ -28,6 +28,21 @@ class CommandRunnerError(Exception):
         return "\n".join(parts)
 
 
+def _preview(text: str, limit: int = 500) -> str:
+    value = text.strip()
+    if not value:
+        return "(no output)"
+    if len(value) <= limit:
+        return value
+    return value[:limit] + f"\n... [truncated to {limit} chars]"
+
+
+def _log_exchange(command: List[str], output: str) -> None:
+    cmd = " ".join(command)
+    print(f"[tool->terminal] {cmd}", flush=True)
+    print(f"[terminal->tool] {_preview(output)}", flush=True)
+
+
 def run_command(
     command: List[str],
     *,
@@ -74,6 +89,7 @@ def run_command(
             timeout=timeout,
         )
     except subprocess.TimeoutExpired as exc:
+        _log_exchange(command, (exc.stdout or "") + (exc.stderr or ""))
         raise CommandRunnerError(
             f"Command timed out after {timeout}s: {' '.join(command)}",
             stdout=exc.stdout or "",
@@ -81,6 +97,7 @@ def run_command(
             returncode=-1,
         ) from exc
     except FileNotFoundError as exc:
+        _log_exchange(command, f"Executable not found: '{command[0]}'")
         raise CommandRunnerError(
             f"Executable not found: '{command[0]}'. "
             "Ensure it is installed and present in $PATH.",
@@ -88,6 +105,7 @@ def run_command(
         ) from exc
 
     if result.returncode != 0 and not allow_nonzero:
+        _log_exchange(command, result.stdout.strip() or result.stderr.strip())
         raise CommandRunnerError(
             f"Command failed (exit {result.returncode}): {' '.join(command)}",
             stdout=result.stdout,
@@ -97,4 +115,5 @@ def run_command(
 
     # Return stdout; if empty, fall back to stderr (some tools write there)
     output = result.stdout.strip() or result.stderr.strip()
+    _log_exchange(command, output)
     return output

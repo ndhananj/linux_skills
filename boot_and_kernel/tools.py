@@ -7,6 +7,7 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "runtime"))
 from command_runner import run_command
+from os_runner import write_text
 
 
 def show_kernel_version() -> str:
@@ -53,8 +54,7 @@ def persist_kernel_sysctl(parameter: str, value: str) -> str:
     value: Value to set, e.g. '1'.
     """
     entry = f"{parameter} = {value}\n"
-    with open("/etc/sysctl.conf", "a") as fh:
-        fh.write(entry)
+    write_text("/etc/sysctl.conf", entry, mode="a")
     return run_command(["sysctl", "-p"])
 
 

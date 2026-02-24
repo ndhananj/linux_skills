@@ -4,7 +4,6 @@ text_processing/tools.py — Tools for processing and transforming text on Linux
 
 import sys
 import os
-import subprocess
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "runtime"))
 from command_runner import run_command
@@ -67,13 +66,11 @@ def translate_characters(input_text: str, from_chars: str, to_chars: str) -> str
     from_chars: Characters to replace (source set).
     to_chars: Replacement characters (destination set).
     """
-    result = subprocess.run(
+    return run_command(
         ["tr", from_chars, to_chars],
-        input=input_text,
-        capture_output=True,
-        text=True,
+        stdin_input=input_text,
+        allow_nonzero=True,
     )
-    return result.stdout
 
 
 def replace_in_file(pattern: str, replacement: str, path: str, in_place: bool = False) -> str:

@@ -4,10 +4,9 @@ scheduling/tools.py — Tools for scheduling commands and scripts on Linux.
 
 import sys
 import os
-import subprocess
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "runtime"))
-from command_runner import run_command
+from command_runner import CommandRunnerError, run_command
 
 
 def list_cron_jobs(user: str = None) -> str:
@@ -49,14 +48,10 @@ def add_cron_job(schedule: str, command: str, user: str = None) -> str:
         write_cmd.extend(["-u", user])
     write_cmd.append("-")
 
-    result = subprocess.run(
-        write_cmd,
-        input=new_crontab,
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        return f"Error: {result.stderr.strip()}"
+    try:
+        run_command(write_cmd, stdin_input=new_crontab)
+    except CommandRunnerError as exc:
+        return f"Error: {exc.stderr.strip() or str(exc)}"
     return f"Cron job added: {new_entry}"
 
 
@@ -79,9 +74,10 @@ def remove_cron_job(pattern: str, user: str = None) -> str:
         write_cmd.extend(["-u", user])
     write_cmd.append("-")
 
-    result = subprocess.run(write_cmd, input=new_crontab, capture_output=True, text=True)
-    if result.returncode != 0:
-        return f"Error: {result.stderr.strip()}"
+    try:
+        run_command(write_cmd, stdin_input=new_crontab)
+    except CommandRunnerError as exc:
+        return f"Error: {exc.stderr.strip() or str(exc)}"
     return f"Removed cron jobs matching: {pattern}"
 
 
@@ -91,13 +87,7 @@ def schedule_at_job(time: str, command: str) -> str:
     time: Time specification, e.g. 'now + 5 minutes', '14:30', 'midnight'.
     command: Shell command to run at the specified time.
     """
-    result = subprocess.run(
-        ["at", time],
-        input=command,
-        capture_output=True,
-        text=True,
-    )
-    return result.stdout.strip() or result.stderr.strip()
+    return run_command(["at", time], stdin_input=command, allow_nonzero=True)
 
 
 def list_at_jobs() -> str:
