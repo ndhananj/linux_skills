@@ -121,6 +121,100 @@ def find_files(path: str, name: str = None, file_type: str = None, max_depth: in
     return run_command(cmd)
 
 
+def list_directories(path: str = ".", show_all: bool = True, max_entries: int = 500) -> str:
+    """List directories under a path.
+
+    path: Root directory to inspect.
+    show_all: When False, hide dot-prefixed directories.
+    max_entries: Maximum directories to return (hard-capped at 1000).
+    """
+    cap = max(1, min(int(max_entries), 1000))
+    print(f"[python->os] list_directories path={path} show_all={show_all} max_entries={cap}", flush=True)
+    dirs, total, skipped, capped = _collect_directories(path=path, show_all=show_all, recursive=False, cap=cap)
+    print(
+        f"[os->python] directories={total} returned={len(dirs)} skipped={skipped}",
+        flush=True,
+    )
+
+    if not dirs:
+        return "No directories found."
+    out = "\n".join(dirs)
+    if total > len(dirs) or capped:
+        out += f"\n... [truncated to {len(dirs)} directories]"
+    if skipped:
+        out += f"\nSkipped entries due to errors: {skipped}"
+    return out
+
+
+def list_directories_recursive(path: str = ".", show_all: bool = True, max_entries: int = 1000) -> str:
+    """List directories recursively under a path.
+
+    path: Root directory to inspect recursively.
+    show_all: When False, hide dot-prefixed directories.
+    max_entries: Maximum directories to return (hard-capped at 2000).
+    """
+    cap = max(1, min(int(max_entries), 2000))
+    print(
+        f"[python->os] list_directories_recursive path={path} show_all={show_all} max_entries={cap}",
+        flush=True,
+    )
+    dirs, total, skipped, capped = _collect_directories(path=path, show_all=show_all, recursive=True, cap=cap)
+    print(
+        f"[os->python] directories={total} returned={len(dirs)} skipped={skipped}",
+        flush=True,
+    )
+
+    if not dirs:
+        return "No directories found."
+    out = "\n".join(dirs)
+    if total > len(dirs) or capped:
+        out += f"\n... [truncated to {len(dirs)} directories]"
+    if skipped:
+        out += f"\nSkipped entries due to errors: {skipped}"
+    return out
+
+
+def _collect_directories(path: str, show_all: bool, recursive: bool, cap: int) -> Tuple[List[str], int, int, bool]:
+    dirs: List[str] = []
+    skipped = 0
+    capped = False
+
+    if recursive:
+        for root, subdirs, _files in os.walk(path, topdown=True, followlinks=False):
+            if not show_all:
+                subdirs[:] = [d for d in subdirs if not d.startswith(".")]
+            for d in subdirs:
+                dirs.append(os.path.join(root, d))
+            if len(dirs) >= cap:
+                # Hard stop for predictable token usage.
+                capped = True
+                break
+    else:
+        try:
+            with os.scandir(path) as it:
+                for entry in it:
+                    try:
+                        is_dir = entry.is_dir(follow_symlinks=False)
+                    except OSError:
+                        skipped += 1
+                        continue
+                    if not is_dir:
+                        continue
+                    name = entry.name
+                    if not show_all and name.startswith("."):
+                        continue
+                    dirs.append(os.path.join(path, name))
+                    if len(dirs) >= cap:
+                        capped = True
+                        break
+        except OSError:
+            skipped += 1
+
+    dirs = sorted(set(dirs))
+    total = len(dirs)
+    return dirs[:cap], total, skipped, capped
+
+
 def largest_files(path: str = ".", limit: int = 10, include_hidden: bool = True) -> str:
     """Find the largest regular files under a directory.
 

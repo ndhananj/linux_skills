@@ -324,6 +324,15 @@ class LinuxSkillsAgent:
         if turn != 1:
             return None
         if selection.get("intent_family") != "file_size_listing":
+            if selection.get("intent_family") in {"directory_listing", "directory_listing_recursive"}:
+                if len(turn_tool_results) != 1:
+                    return None
+                tool_name, output = turn_tool_results[0]
+                if tool_name not in {"file_system__list_directories", "file_system__list_directories_recursive"}:
+                    return None
+                if output.startswith("ERROR"):
+                    return None
+                return f"Directories found:\n{output}"
             return None
         if len(turn_tool_results) != 1:
             return None

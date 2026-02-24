@@ -54,6 +54,20 @@ def select_tools(
 def _detect_intent_family(prompt: str) -> Tuple[Optional[str], str]:
     prompt_lc = prompt.lower()
 
+    recursive_markers = (
+        "recursively",
+        "recursive",
+        "subdirectories",
+        "subdirs",
+        "directory tree",
+        "tree of directories",
+    )
+    if "directories" in prompt_lc and (" under " in prompt_lc or any(m in prompt_lc for m in recursive_markers)):
+        return "directory_listing_recursive", "high"
+
+    if "directories" in prompt_lc and (" in " in prompt_lc or "under " in prompt_lc or "inside " in prompt_lc):
+        return "directory_listing", "high"
+
     conceptual_verbs = (
         "define",
         "recall",
@@ -110,8 +124,19 @@ def _fixed_slice_tool_names(family: str) -> List[str]:
             "file_system__disk_usage",
             "file_system__list_directory",
         ],
+        "directory_listing": [
+            "file_system__list_directories",
+            "file_system__list_directory",
+            "file_system__find_files",
+        ],
+        "directory_listing_recursive": [
+            "file_system__list_directories_recursive",
+            "file_system__list_directories",
+            "file_system__find_files",
+        ],
         "filesystem_navigation": [
             "file_system__list_directory",
+            "file_system__list_directories",
             "file_system__find_files",
             "file_system__disk_usage",
             "file_system__disk_free",

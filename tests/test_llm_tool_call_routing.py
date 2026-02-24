@@ -69,6 +69,32 @@ def test_largest_files_prompt_uses_file_size_slice(tmp_path: Path):
     assert "text_processing__concatenate_files" not in names
 
 
+def test_directories_prompt_uses_directory_listing_slice(tmp_path: Path):
+    LinuxSkillsAgent = _load_agent_class()
+    cfg_path = _make_temp_config(tmp_path, tracing_enabled=False)
+    agent = LinuxSkillsAgent(config_path=str(cfg_path))
+
+    selected = agent._select_tool_configs("What are all the directories in ../?")
+    names = [cfg["function"]["name"] for cfg in selected["tools"]]
+
+    assert selected["mode"] == "per_skill_fixed_slice"
+    assert selected["intent_family"] == "directory_listing"
+    assert "file_system__list_directories" in names
+
+
+def test_recursive_directories_prompt_uses_recursive_slice(tmp_path: Path):
+    LinuxSkillsAgent = _load_agent_class()
+    cfg_path = _make_temp_config(tmp_path, tracing_enabled=False)
+    agent = LinuxSkillsAgent(config_path=str(cfg_path))
+
+    selected = agent._select_tool_configs("List directories recursively under ../")
+    names = [cfg["function"]["name"] for cfg in selected["tools"]]
+
+    assert selected["mode"] == "per_skill_fixed_slice"
+    assert selected["intent_family"] == "directory_listing_recursive"
+    assert "file_system__list_directories_recursive" in names
+
+
 def test_tracing_logs_tool_calls(tmp_path: Path):
     LinuxSkillsAgent = _load_agent_class()
     cfg_path = _make_temp_config(tmp_path, tracing_enabled=True)
