@@ -19,8 +19,9 @@ Quick start
 
 Configuration
 -------------
-Edit runtime/config.yaml to change model names, API keys, and the system
-prompt.  See config.yaml for the full schema.
+Edit runtime/config.yaml to change non-secret settings (models, prompts, etc).
+Put secrets in runtime/config.local.yaml (untracked) or environment variables
+such as GROQ_API_KEY.
 """
 
 import json
@@ -74,7 +75,28 @@ class LinuxSkillsAgent:
         abs_path = os.path.join(os.path.dirname(__file__), path)
         with open(abs_path) as fh:
             cfg = yaml.safe_load(fh)
+
+        # Optional local override file for secrets and machine-specific tuning.
+        local_path = os.path.join(os.path.dirname(abs_path), "config.local.yaml")
+        if os.path.exists(local_path):
+            with open(local_path) as fh:
+                local_cfg = yaml.safe_load(fh) or {}
+            cfg = self._deep_merge_dicts(cfg, local_cfg)
+
+        # Environment variables override files (best for secret injection).
+        groq_api_key = os.environ.get("GROQ_API_KEY")
+        if groq_api_key:
+            cfg.setdefault("llm", {}).setdefault("groq", {})["api_key"] = groq_api_key
         return cfg
+
+    def _deep_merge_dicts(self, base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+        merged = dict(base)
+        for key, value in override.items():
+            if isinstance(value, dict) and isinstance(merged.get(key), dict):
+                merged[key] = self._deep_merge_dicts(merged[key], value)
+            else:
+                merged[key] = value
+        return merged
 
     def _make_local_client(self) -> openai.OpenAI:
         lc = self.cfg["llm"]["local"]
@@ -82,7 +104,7 @@ class LinuxSkillsAgent:
 
     def _make_groq_client(self) -> Optional[openai.OpenAI]:
         gc = self.cfg["llm"].get("groq", {})
-        if not gc.get("enabled", False):
+        if not gc.get("enabled", True):
             print(_c(_YELLOW, "[agent] Groq fallback disabled in config (llm.groq.enabled=false)."))
             return None
         key = gc.get("api_key", "")
@@ -162,12 +184,20 @@ class LinuxSkillsAgent:
             return resp.choices[0].message
         except (openai.APIConnectionError, openai.APIStatusError) as local_err:
             print(_c(_RED, f"[agent]   Local LLM error: {local_err}"))
+            err_text = str(local_err)
+            if "exceeds the available context size" in err_text:
+                raise RuntimeError(
+                    "Local LLM context window is too small for the loaded tool set. "
+                    "Restart the local server with a larger context, e.g.:\n"
+                    "  LLAMA_CTX_SIZE=32768 bash scripts/start_server.sh\n"
+                    "Then re-run agent.py."
+                ) from local_err
 
         # --- Fall back to Groq ---
         if self._groq_client is None:
             raise RuntimeError(
                 "Local LLM is unavailable and no Groq API key is configured. "
-                "Set llm.groq.api_key in config.yaml."
+                "Set GROQ_API_KEY or llm.groq.api_key in config.local.yaml."
             )
         print(_c(_YELLOW, f"[agent]   → Groq fallback ({groq_model})"))
         resp = self._groq_client.chat.completions.create(

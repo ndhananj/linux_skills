@@ -122,21 +122,17 @@ mkdir -p "$MODELS_DIR"
 # ---------------------------------------------------------------------------
 # 5. Remind user about config
 # ---------------------------------------------------------------------------
-yellow "6/6  Restoring and checking configuration..."
-CONFIG_FILE="$RUNTIME_DIR/config.yaml"
+yellow "6/6  Checking configuration..."
+LOCAL_CONFIG="$RUNTIME_DIR/config.local.yaml"
+LOCAL_CONFIG_EXAMPLE="$RUNTIME_DIR/config.local.example.yaml"
 
-# Recreate runtime/config.yaml from the repository's tracked version so each
-# install run starts from a clean baseline config.
-if git -C "$REPO_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    git -C "$REPO_ROOT" checkout -- "runtime/config.yaml"
-    green "     Restored runtime/config.yaml from repository defaults"
+if [ ! -f "$LOCAL_CONFIG" ] && [ -f "$LOCAL_CONFIG_EXAMPLE" ]; then
+    cp "$LOCAL_CONFIG_EXAMPLE" "$LOCAL_CONFIG"
+    green "     Created $LOCAL_CONFIG from template"
 fi
 
-if grep -q "YOUR_GROQ_API_KEY" "$CONFIG_FILE"; then
-    yellow "     NOTICE: Open $CONFIG_FILE and replace YOUR_GROQ_API_KEY"
-    yellow "     with your key from https://console.groq.com/keys"
-    yellow "     (optional — the agent works without it using the local model)"
-fi
+yellow "     Security note: keep secrets out of runtime/config.yaml"
+yellow "     Use GROQ_API_KEY env var or runtime/config.local.yaml instead."
 
 echo
 green "=== Installation complete! ==="

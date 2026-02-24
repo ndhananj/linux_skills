@@ -46,11 +46,12 @@ if [ ! -f "$MODEL_PATH" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Server parameters tuned for 1 vCPU / 1 GB RAM
+# Server parameters
 # ---------------------------------------------------------------------------
 HOST="127.0.0.1"
 PORT="8080"
-CTX_SIZE=4096          # context window in tokens
+# Override with LLAMA_CTX_SIZE=32768 bash start_server.sh
+CTX_SIZE="${LLAMA_CTX_SIZE:-4096}"   # context window in tokens
 N_THREADS="$(nproc)"   # use all available CPU threads
 N_PARALLEL=1           # only one concurrent request on a $6 VPS
 BATCH_SIZE=512         # prompt-processing batch size

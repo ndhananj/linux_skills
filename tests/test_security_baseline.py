@@ -4,6 +4,8 @@ import ast
 import importlib.util
 from pathlib import Path
 
+import yaml
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -89,6 +91,6 @@ def test_start_server_binds_localhost_by_default():
     assert 'HOST="127.0.0.1"' in script
 
 
-def test_default_config_disables_groq_fallback():
-    cfg = (REPO_ROOT / "runtime/config.yaml").read_text(encoding="utf-8")
-    assert "enabled: false" in cfg
+def test_default_config_has_no_groq_api_key():
+    cfg = yaml.safe_load((REPO_ROOT / "runtime/config.yaml").read_text(encoding="utf-8"))
+    assert "api_key" not in cfg.get("llm", {}).get("groq", {})

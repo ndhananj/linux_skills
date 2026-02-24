@@ -1,9 +1,8 @@
 # =============================================================================
 # Linux Skills Agent — Configuration
 # =============================================================================
-# Copy this file to config.local.yaml and set your secrets there, or edit
-# this file directly.  config.local.yaml is listed in .gitignore so your
-# API keys are never committed.
+# Keep this file free of secrets. Put machine-specific or secret overrides in
+# config.local.yaml (gitignored), or use environment variables (e.g. GROQ_API_KEY).
 # =============================================================================
 
 # ---------------------------------------------------------------------------
@@ -49,8 +48,13 @@ llm:
   # Free tier limits (as of 2025): 30 RPM, 14 400 RPD, 6 000 TPM for
   # llama-3.1-8b-instant.
   groq:
-    # Replace with your key from https://console.groq.com/keys
-    api_key: "YOUR_GROQ_API_KEY"
+    # Keep enabled for tiny (4K context) local setups; set false to force local-only.
+    enabled: true
+    # Do NOT put API keys in this tracked file.
+    # Set GROQ_API_KEY in your shell, or create runtime/config.local.yaml:
+    #   llm:
+    #     groq:
+    #       api_key: "your-real-key"
     # Best free-tier model for tool-calling: fast and capable
     model: "llama-3.1-8b-instant"
     # Alternative if you need more reasoning power (lower RPD limit):

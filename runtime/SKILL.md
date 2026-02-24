@@ -10,7 +10,7 @@ This directory contains the core infrastructure that powers the Linux Skills Age
 
 **`command_runner.py`** is a thin wrapper around Python's `subprocess.run`. Every tool function in the repository calls `run_command()` rather than `subprocess` directly, ensuring consistent error handling, timeout enforcement, and output normalisation across all 18 skill modules.
 
-**`config.yaml`** holds all runtime configuration: LLM endpoints, API keys, the system prompt, and agent behaviour parameters. Copy it to `config.local.yaml` for local overrides that will not be committed to version control.
+**`config.yaml`** holds non-secret runtime defaults: LLM endpoints, model choices, prompts, and agent behaviour parameters. Put secrets (for example `llm.groq.api_key`) in `config.local.yaml` (gitignored) or environment variables like `GROQ_API_KEY`.
 
 ## Setup Scripts
 

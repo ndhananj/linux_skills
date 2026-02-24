@@ -12,7 +12,8 @@ linux_skills/
 │   ├── agent.py              ← Main entry point (tool-calling loop)
 │   ├── tool_registry.py      ← Auto-discovers tools, builds OpenAI schemas
 │   ├── command_runner.py     ← Robust subprocess wrapper used by all tools
-│   ├── config.yaml           ← LLM endpoints, API keys, system prompt
+│   ├── config.yaml           ← LLM endpoints, prompts, non-secret defaults
+│   ├── config.local.yaml     ← local secret overrides (gitignored)
 │   ├── requirements.txt      ← Python dependencies
 │   └── scripts/
 │       ├── install.sh        ← One-shot VPS setup (builds llama.cpp)
@@ -49,6 +50,8 @@ linux_skills/
 
 The agent tries the **local llama.cpp server** first. If it is unreachable (e.g. not yet started, or the VPS is under heavy load), it automatically falls back to the **Groq free-tier API** — no code changes required.
 
+Important for tiny VPS setups: this repository loads a large tool registry. With a **4K context** local server, some prompts can exceed context size before tool execution starts. Keep 4K as the default on small machines, and configure Groq fallback for reliability.
+
 ---
 
 ## Quick Start
@@ -65,7 +68,7 @@ bash install.sh
 - Install `build-essential`, `cmake`, `git`, `python3`, `wget`
 - Clone and compile `llama.cpp` (server binary only — fast even on 1 vCPU)
 - Install Python dependencies from `requirements.txt`
-- Reproduce `runtime/config.yaml` from the repository defaults on each install run
+- Create `runtime/config.local.yaml` from the safe template if missing
 
 ### 2. Download a model
 
@@ -75,9 +78,13 @@ bash download_model.sh
 
 Downloads both the primary Qwen2.5-1.5B model and the tiny SmolLM2-360M fallback.
 
-### 3. (Optional) Set your Groq API key
+### 3. (Recommended on tiny VPS) Set your Groq API key
 
-Edit `runtime/config.yaml` and replace `YOUR_GROQ_API_KEY` with your key from [console.groq.com/keys](https://console.groq.com/keys). The agent works without it, but Groq provides a powerful cloud fallback at no cost.
+Do not store secrets in `runtime/config.yaml` (tracked file). Use one of:
+- Environment variable: `export GROQ_API_KEY="your-key"`
+- Local override file: copy `runtime/config.local.example.yaml` to `runtime/config.local.yaml` and edit it.
+
+Keep `llm.groq.enabled: true` for tiny 4K local setups so overflowed local requests can fall back to Groq.
 
 ### 4. Start the LLM server
 
@@ -89,6 +96,12 @@ bash start_server.sh
 ```
 
 The server listens on `http://localhost:8080/v1` (OpenAI-compatible).
+
+Defaults are tuned for tiny machines:
+- `start_server.sh` defaults to `4096` context tokens.
+- This is the safest default for low-RAM hosts.
+- You can raise context only on larger hosts:
+  `LLAMA_CTX_SIZE=32768 bash start_server.sh`
 
 ### 5. Run the agent
 
@@ -135,7 +148,7 @@ Each skill module contains a `SKILL.md` (human-readable reference and agent inst
 
 ---
 
-## Configuration Reference (`runtime/config.yaml`)
+## Configuration Reference (`runtime/config.yaml` + `runtime/config.local.yaml`)
 
 | Key | Description |
 |-----|-------------|
@@ -143,7 +156,7 @@ Each skill module contains a `SKILL.md` (human-readable reference and agent inst
 | `agent.max_tool_output_chars` | Maximum characters of tool output included in the LLM context (default 4000). |
 | `llm.local.base_url` | URL of the local llama.cpp server. |
 | `llm.local.model` | Model name sent in the request (llama.cpp ignores this). |
-| `llm.groq.api_key` | Your Groq API key (optional). |
+| `llm.groq.api_key` | Optional in `config.local.yaml` only (or set `GROQ_API_KEY` env var). |
 | `llm.groq.model` | Groq model to use for fallback (default `llama-3.1-8b-instant`). |
 
 ---
@@ -160,3 +173,16 @@ Each skill module contains a `SKILL.md` (human-readable reference and agent inst
 > **Tip:** If you hit OOM errors, switch to the SmolLM2-360M model:
 > `bash start_server.sh SmolLM2-360M-Q4_K_M.gguf`
 > It uses only ~250 MB and is 2–3× faster, at the cost of some reasoning quality.
+
+---
+
+## Troubleshooting: Context Size Errors
+
+If you see an error like:
+
+`request (...) exceeds the available context size (4096 tokens)`
+
+use one of these paths:
+
+1. Tiny VPS path (recommended): keep 4K context and configure Groq fallback via `GROQ_API_KEY` or `runtime/config.local.yaml`.
+2. Bigger machine path: restart with larger context, e.g. `LLAMA_CTX_SIZE=32768 bash runtime/scripts/start_server.sh`.
