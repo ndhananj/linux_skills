@@ -64,8 +64,8 @@ def test_largest_files_prompt_uses_file_size_slice(tmp_path: Path):
 
     assert selected["mode"] == "per_skill_fixed_slice"
     assert selected["intent_family"] == "file_size_listing"
-    assert "file_system__find_files" in names
-    assert "shell_scripting__run_shell_command" in names
+    assert "file_system__largest_files" in names
+    assert "file_system__find_files" not in names
     assert "text_processing__concatenate_files" not in names
 
 

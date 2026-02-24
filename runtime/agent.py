@@ -15,6 +15,7 @@ from __future__ import annotations
 import os
 import sys
 import textwrap
+import time
 from typing import Any, Dict, List, Optional
 
 import openai
@@ -77,7 +78,7 @@ class LinuxSkillsAgent:
             on_metrics=self._on_completion_metrics,
         )
 
-        print(_c(_GREEN, f"[agent] Ready — {len(self._tool_configs)} tools loaded."))
+        print(_c(_GREEN, f"[agent] Ready — {len(self._tool_configs)} tools loaded."), flush=True)
 
     # ------------------------------------------------------------------
     # Initialisation helpers
@@ -139,10 +140,10 @@ class LinuxSkillsAgent:
     def _make_groq_client(self) -> Optional[openai.OpenAI]:
         gc = self.settings.llm.groq
         if not gc.enabled:
-            print(_c(_YELLOW, "[agent] Groq fallback disabled in config (llm.groq.enabled=false)."))
+            print(_c(_YELLOW, "[agent] Groq fallback disabled in config (llm.groq.enabled=false)."), flush=True)
             return None
         if not gc.api_key or gc.api_key == "YOUR_GROQ_API_KEY":
-            print(_c(_YELLOW, "[agent] Groq API key not set — fallback disabled."))
+            print(_c(_YELLOW, "[agent] Groq API key not set — fallback disabled."), flush=True)
             return None
         return openai.OpenAI(base_url="https://api.groq.com/openai/v1", api_key=gc.api_key)
 
@@ -155,11 +156,13 @@ class LinuxSkillsAgent:
     # ------------------------------------------------------------------
 
     def run(self, prompt: str) -> str:
+        started = time.perf_counter()
         self._trace("prompt_received", {"prompt": prompt})
         direct = self._try_builtin_answer(prompt)
         if direct is not None:
             self._trace("prompt_built_in_response", {"prompt": prompt, "answer": direct})
-            print(_c(_GREEN, "\n[agent] Final answer:\n") + direct)
+            self._trace("run_complete", {"mode": "builtin", "duration_s": round(time.perf_counter() - started, 4)})
+            print(_c(_GREEN, "\n[agent] Final answer:\n") + direct, flush=True)
             return direct
 
         system_prompt = self.settings.agent.system_prompt
@@ -171,7 +174,7 @@ class LinuxSkillsAgent:
             {"role": "user", "content": prompt},
         ]
 
-        print(_c(_YELLOW, f"[agent] Tool schemas in context: {len(active_tools)}/{len(self._tool_configs)}"))
+        print(_c(_YELLOW, f"[agent] Tool schemas in context: {len(active_tools)}/{len(self._tool_configs)}"), flush=True)
         self._trace(
             "tool_schema_selection",
             {
@@ -186,17 +189,21 @@ class LinuxSkillsAgent:
         )
 
         for turn in range(1, self.MAX_TURNS + 1):
-            print(_c(_CYAN, f"\n[agent] Turn {turn}/{self.MAX_TURNS}"))
-            response_msg = self._complete(messages, active_tools)
+            print(_c(_CYAN, f"\n[agent] Turn {turn}/{self.MAX_TURNS}"), flush=True)
+            tool_choice = "required" if turn == 1 and selection.get("confidence") == "high" else "auto"
+            response_msg = self._complete(messages, active_tools, tool_choice=tool_choice)
 
             if not response_msg.tool_calls:
                 answer = response_msg.content or ""
-                print(_c(_GREEN, "\n[agent] Final answer:\n") + answer)
+                self._trace("run_complete", {"mode": "llm", "duration_s": round(time.perf_counter() - started, 4)})
+                print(_c(_GREEN, "\n[agent] Final answer:\n") + answer, flush=True)
                 return answer
 
-            messages.append(response_msg)
+            messages.append(self._assistant_message_from_response(response_msg))
+            turn_tool_results: List[tuple[str, str]] = []
             for tc in response_msg.tool_calls:
                 tool_result = self._dispatch(tc)
+                turn_tool_results.append((tc.function.name, tool_result))
                 messages.append(
                     {
                         "role": "tool",
@@ -206,9 +213,16 @@ class LinuxSkillsAgent:
                     }
                 )
 
-        print(_c(_RED, f"[agent] Reached {self.MAX_TURNS} turns. Requesting summary."))
+            fast_answer = self._maybe_fast_answer(selection, turn, turn_tool_results)
+            if fast_answer is not None:
+                self._trace("run_complete", {"mode": "fast_path", "duration_s": round(time.perf_counter() - started, 4)})
+                print(_c(_GREEN, "\n[agent] Final answer:\n") + fast_answer, flush=True)
+                return fast_answer
+
+        print(_c(_RED, f"[agent] Reached {self.MAX_TURNS} turns. Requesting summary."), flush=True)
         messages.append({"role": "user", "content": "Please summarise what you have found so far."})
         final = self._complete(messages, active_tools)
+        self._trace("run_complete", {"mode": "llm_max_turns", "duration_s": round(time.perf_counter() - started, 4)})
         return final.content or ""
 
     # ------------------------------------------------------------------
@@ -237,7 +251,8 @@ class LinuxSkillsAgent:
                 _c(
                     _YELLOW,
                     f"[agent]   -> local ({self.settings.llm.local.model}) tools={len(tool_configs)} choice={tool_choice}",
-                )
+                ),
+                flush=True,
             )
         return self._gateway.complete(messages=messages, tool_configs=tool_configs, tool_choice=tool_choice)
 
@@ -247,7 +262,7 @@ class LinuxSkillsAgent:
             args_preview = tool_call.function.arguments
         except Exception:
             args_preview = "{}"
-        print(_c(_CYAN, f"[agent]   tool: {name}({args_preview})"))
+        print(_c(_CYAN, f"[agent]   tool: {name}({args_preview})"), flush=True)
 
         output = dispatch_tool_call(
             tool_call=tool_call,
@@ -255,7 +270,7 @@ class LinuxSkillsAgent:
             max_output_chars=self.settings.agent.max_tool_output_chars,
             tracer=self._trace,
         )
-        print(textwrap.indent(output[:200], "    "))
+        print(textwrap.indent(output[:200], "    "), flush=True)
         return output
 
     # ------------------------------------------------------------------
@@ -277,6 +292,48 @@ class LinuxSkillsAgent:
             lines.append(f"- {skill} ({tool_count} tools)")
         return "\n".join(lines)
 
+    def _assistant_message_from_response(self, response_msg: Any) -> Dict[str, Any]:
+        msg: Dict[str, Any] = {
+            "role": "assistant",
+            "content": response_msg.content or "",
+        }
+        tool_calls = getattr(response_msg, "tool_calls", None) or []
+        if tool_calls:
+            serialized = []
+            for tc in tool_calls:
+                fn = getattr(tc, "function", None)
+                serialized.append(
+                    {
+                        "id": getattr(tc, "id", ""),
+                        "type": "function",
+                        "function": {
+                            "name": getattr(fn, "name", ""),
+                            "arguments": getattr(fn, "arguments", "{}") or "{}",
+                        },
+                    }
+                )
+            msg["tool_calls"] = serialized
+        return msg
+
+    def _maybe_fast_answer(
+        self,
+        selection: Dict[str, Any],
+        turn: int,
+        turn_tool_results: List[tuple[str, str]],
+    ) -> Optional[str]:
+        if turn != 1:
+            return None
+        if selection.get("intent_family") != "file_size_listing":
+            return None
+        if len(turn_tool_results) != 1:
+            return None
+        tool_name, output = turn_tool_results[0]
+        if tool_name != "file_system__largest_files":
+            return None
+        if output.startswith("ERROR"):
+            return None
+        return f"Top largest files:\n{output}"
+
     def _on_completion_metrics(self, metrics: CompletionMetrics) -> None:
         if not self.settings.agent.progress.enabled or not self.settings.agent.progress.show_latency:
             return
@@ -284,7 +341,8 @@ class LinuxSkillsAgent:
             _c(
                 _YELLOW,
                 f"[agent]   <- {metrics.backend} ({metrics.model}) {metrics.latency_s:.2f}s tools={metrics.tool_count}",
-            )
+            ),
+            flush=True,
         )
 
     def _trace(self, event: str, payload: Optional[Dict[str, Any]] = None) -> None:

@@ -87,6 +87,11 @@ def test_live_llm_prompt_contracts(tmp_path: Path):
             {"role": "user", "content": prompt},
         ]
 
+        print(
+            f"[contract] {idx:02d}/{len(cases)} start id={case['id']} tools={len(active_tools)}",
+            flush=True,
+        )
+
         t0 = time.perf_counter()
         response_msg = agent._complete(messages, active_tools, tool_choice="required")
         elapsed = time.perf_counter() - t0
@@ -99,7 +104,10 @@ def test_live_llm_prompt_contracts(tmp_path: Path):
             if isinstance(name, str):
                 names.append(name)
 
-        print(f"[contract] {idx:02d}/{len(cases)} {case['id']} tools={len(active_tools)} latency={elapsed:.2f}s calls={names[:2]}")
+        print(
+            f"[contract] {idx:02d}/{len(cases)} done  id={case['id']} tools={len(active_tools)} latency={elapsed:.2f}s calls={names[:2]}",
+            flush=True,
+        )
 
         case_failure = None
         if not names:

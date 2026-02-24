@@ -7,10 +7,24 @@ that errors, timeouts, and output normalisation are handled consistently.
 
 import sys
 import os
+import heapq
+from typing import List, Tuple
 
 # Allow running tools.py standalone for testing without installing the package
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "runtime"))
 from command_runner import run_command
+
+
+def _human_size(num_bytes: int) -> str:
+    units = ["B", "KB", "MB", "GB", "TB", "PB"]
+    size = float(num_bytes)
+    for unit in units:
+        if size < 1024.0 or unit == units[-1]:
+            if unit == "B":
+                return f"{int(size)} {unit}"
+            return f"{size:.1f} {unit}"
+        size /= 1024.0
+    return f"{num_bytes} B"
 
 
 def list_directory(path: str, long_format: bool = False, show_all: bool = False) -> str:
@@ -105,6 +119,57 @@ def find_files(path: str, name: str = None, file_type: str = None, max_depth: in
     if name:
         cmd.extend(["-name", name])
     return run_command(cmd)
+
+
+def largest_files(path: str = ".", limit: int = 10, include_hidden: bool = True) -> str:
+    """Find the largest regular files under a directory.
+
+    path: Root directory to scan recursively.
+    limit: Number of files to return.
+    include_hidden: When False, skip hidden files and directories.
+    """
+    try:
+        n = max(1, int(limit))
+    except Exception:
+        n = 10
+
+    top: List[Tuple[int, str]] = []
+    skipped = 0
+
+    def _onerror(_err):
+        nonlocal skipped
+        skipped += 1
+
+    for root, dirs, files in os.walk(path, topdown=True, onerror=_onerror, followlinks=False):
+        if not include_hidden:
+            dirs[:] = [d for d in dirs if not d.startswith(".")]
+            files = [f for f in files if not f.startswith(".")]
+
+        for fname in files:
+            fp = os.path.join(root, fname)
+            try:
+                st = os.stat(fp, follow_symlinks=False)
+            except OSError:
+                skipped += 1
+                continue
+            if not os.path.isfile(fp):
+                continue
+            item = (int(st.st_size), fp)
+            if len(top) < n:
+                heapq.heappush(top, item)
+            else:
+                heapq.heappushpop(top, item)
+
+    top_sorted = sorted(top, key=lambda x: (-x[0], x[1]))
+    lines = []
+    for idx, (size, fp) in enumerate(top_sorted, start=1):
+        lines.append(f"{idx:2d}. {_human_size(size):>10}  {fp}")
+
+    if not lines:
+        lines = ["No files found."]
+    if skipped:
+        lines.append(f"\nSkipped entries due to errors: {skipped}")
+    return "\n".join(lines)
 
 
 def grep_in_file(pattern: str, path: str, ignore_case: bool = False, invert: bool = False, recursive: bool = False) -> str:

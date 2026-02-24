@@ -106,10 +106,9 @@ def _detect_intent_family(prompt: str) -> Tuple[Optional[str], str]:
 def _fixed_slice_tool_names(family: str) -> List[str]:
     slices = {
         "file_size_listing": [
-            "file_system__find_files",
+            "file_system__largest_files",
             "file_system__disk_usage",
             "file_system__list_directory",
-            "shell_scripting__run_shell_command",
         ],
         "filesystem_navigation": [
             "file_system__list_directory",

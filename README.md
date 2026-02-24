@@ -227,3 +227,4 @@ Contract prompts and expected tool-call targets are in:
 - `tests/fixtures/llm_prompt_contracts.yaml`
 
 During runs, the agent now prints per-request local LLM latency (`->` request / `<-` response) so you can sanity-check local performance quickly.
+The script also runs a direct local-LLM sanity check first (`Reply with exactly: OK`) and prints its latency before contract tests begin.
