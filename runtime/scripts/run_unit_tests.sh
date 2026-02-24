@@ -11,38 +11,23 @@ if ! command -v pytest >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "Running live LLM prompt contract tests against http://127.0.0.1:8080 ..."
-echo "This validates natural-language prompts -> expected tool calls for all skills."
-echo
+echo "Running unit and routing tests..."
 
 START_TS="$(date +%s)"
 TMP_OUT="$(mktemp)"
 RC=0
 
-python3 runtime/scripts/llm_sanity_check.py 2>&1 | tee "$TMP_OUT"
-SANITY_RC=${PIPESTATUS[0]}
-if [[ $SANITY_RC -ne 0 ]]; then
-  RC=$SANITY_RC
-fi
-
-echo
-if [[ $RC -eq 0 ]]; then
-  pytest -q -s -m live_contract tests/test_llm_prompt_contract_live.py "$@" 2>&1 | tee -a "$TMP_OUT"
-  PYTEST_RC=${PIPESTATUS[0]}
-  if [[ $PYTEST_RC -ne 0 ]]; then
-    RC=$PYTEST_RC
-  fi
+pytest -q tests 2>&1 | tee "$TMP_OUT"
+PYTEST_RC=${PIPESTATUS[0]}
+if [[ $PYTEST_RC -ne 0 ]]; then
+  RC=$PYTEST_RC
 fi
 
 END_TS="$(date +%s)"
 DURATION=$((END_TS - START_TS))
 SUMMARY="$(grep -E '[0-9]+ (passed|failed|skipped|error|errors)' "$TMP_OUT" | tail -n 1 || true)"
 if [[ -z "${SUMMARY}" ]]; then
-  if [[ $SANITY_RC -ne 0 ]]; then
-    SUMMARY="sanity check failed (exit ${SANITY_RC})"
-  else
-    SUMMARY="contract run exit code=${RC}"
-  fi
+  SUMMARY="pytest exit code=${PYTEST_RC}"
 fi
 
 STATUS="PASS"
@@ -52,11 +37,12 @@ fi
 
 python3 runtime/scripts/update_tests_md.py \
   --repo-root "$REPO_ROOT" \
-  --runner "live_prompt_contract" \
+  --runner "unit_pytest" \
   --status "$STATUS" \
-  --command "bash runtime/scripts/run_prompt_contract_tests.sh" \
+  --command "bash runtime/scripts/run_unit_tests.sh" \
   --duration-s "$DURATION" \
   --summary "$SUMMARY"
 
 rm -f "$TMP_OUT"
 exit $RC
+
