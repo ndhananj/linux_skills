@@ -1,0 +1,274 @@
+cases:
+  - id: entry_linux_components
+    prompt: "Define Linux OS components such as the kernel, libraries, the command line, and user interfaces"
+    expected_skills: [boot_and_kernel, shell_scripting]
+  - id: entry_distros_use_cases
+    prompt: "Recall when to use specific Linux distributions to address specific use cases"
+    expected_skills: [troubleshooting]
+  - id: entry_storage_partition_fs
+    prompt: "Recall how Linux treats mass storage devices, partitioning and partition types, and file system types"
+    expected_skills: [storage]
+  - id: entry_linux_directories
+    prompt: "Outline the purpose of various Linux directories such as /boot, /proc, /dev, /var, and so on"
+    expected_skills: [file_system]
+  - id: entry_shell_automation
+    prompt: "Outline how to automate tasks using shell scripts with commands such as tee, awk, sed, find, grep, and egrep"
+    expected_skills: [shell_scripting, text_processing]
+  - id: entry_containers_vs_vm
+    prompt: "Describe how application containers differ from virtual machines"
+    expected_skills: [containerization]
+  - id: entry_linux_threats
+    prompt: "List common Linux threats including social engineering, malware, flawed software, and security misconfigurations"
+    expected_skills: [security]
+  - id: entry_cia_triad
+    prompt: "Outline how the CIA triad enhances IT security"
+    expected_skills: [security]
+  - id: entry_cryptography
+    prompt: "Recognize how cryptography protects data"
+    expected_skills: [security]
+  - id: entry_ldap_auth
+    prompt: "Outline the role authentication plays including the use of Lightweight Directory Access Protocol (LDAP)"
+    expected_skills: [security]
+  - id: entry_pam
+    prompt: "Recognize how pluggable authentication module (PAM) is used for security in Linux"
+    expected_skills: [security]
+  - id: entry_firewalls_and_dmz
+    prompt: "Recognize the different types of firewalls, including the web application firewall (WAF), their placement, such as in the demilitarized zone (DMZ), and when they should be used"
+    expected_skills: [security]
+  - id: entry_firewall_solutions
+    prompt: "Recall various Linux firewall solutions including firewalld, iptables, nftables, and Uncomplicated Firewall (UFW)"
+    expected_skills: [security]
+  - id: entry_troubleshooting_steps
+    prompt: "Outline the steps used when troubleshooting problems"
+    expected_skills: [troubleshooting]
+  - id: entry_cpu_memory_perf
+    prompt: "List common CPU and memory performance problems"
+    expected_skills: [performance]
+
+  - id: beginner_bios_uefi
+    prompt: "Determine how Linux interacts with BIOS and UEFI and use mkinitrd, dracut, vmlinuz, and grub"
+    expected_skills: [boot_and_kernel]
+  - id: beginner_dirs
+    prompt: "Outline the purpose of various Linux directories such as /boot, /proc, /dev, /var, and so on"
+    expected_skills: [file_system]
+  - id: beginner_fs_management
+    prompt: "Recognize when to use Linux file system management commands such as lsblk, fdisk, mkfs, parted, and partprobe"
+    expected_skills: [storage]
+  - id: beginner_fs_security_cmds
+    prompt: "Recognize how to use Linux file system security commands such as chmod, chgrp, and chown"
+    expected_skills: [user_and_group]
+  - id: beginner_permissions
+    prompt: "Manage standard Linux file system permissions using common Linux OS commands"
+    expected_skills: [user_and_group]
+  - id: beginner_ipv4_ipv6
+    prompt: "Plan for IPv4 and IPv6 addressing needs"
+    expected_skills: [networking]
+  - id: beginner_network_commands
+    prompt: "Use common Linux networking commands such as ip, ifconfig, hostname, arp, route, dig, nslookup, traceroute, curl, wget, nc, and netstat"
+    expected_skills: [networking]
+  - id: beginner_init_runlevels
+    prompt: "Recall how the init process and runlevels work in Linux"
+    expected_skills: [process_and_service]
+  - id: beginner_startup_shutdown
+    prompt: "Manage Linux startup and shutdown using init and runlevels"
+    expected_skills: [process_and_service, boot_and_kernel]
+  - id: beginner_dhcp
+    prompt: "Describe DHCP centralized IP configurations"
+    expected_skills: [networking]
+  - id: beginner_threats
+    prompt: "List common Linux threats including social engineering, malware, flawed software, and security misconfigurations"
+    expected_skills: [security]
+  - id: beginner_cia
+    prompt: "Outline how the CIA triad enhances IT security"
+    expected_skills: [security]
+  - id: beginner_crypto
+    prompt: "Recognize how cryptography protects data"
+    expected_skills: [security]
+  - id: beginner_ldap
+    prompt: "Outline the role authentication plays including the use of Lightweight Directory Access Protocol (LDAP)"
+    expected_skills: [security]
+  - id: beginner_firewalls_dmz
+    prompt: "Recognize the different types of firewalls, including WAF and DMZ placement"
+    expected_skills: [security]
+  - id: beginner_firewall_tools
+    prompt: "Recall firewall solutions including firewalld, iptables, nftables, and UFW"
+    expected_skills: [security]
+  - id: beginner_secure_system
+    prompt: "Secure a Linux system, including user accounts and passwords, as well as securing services and settings"
+    expected_skills: [security, user_and_group, process_and_service]
+  - id: beginner_storage_network_hw_issues
+    prompt: "List common storage and network hardware issues"
+    expected_skills: [storage, troubleshooting]
+  - id: beginner_storage_network_troubleshoot
+    prompt: "Troubleshoot storage problems such as file system mounting and bringing network cards up"
+    expected_skills: [storage, networking, troubleshooting]
+
+  - id: intermediate_linux_components
+    prompt: "Define Linux OS components such as the kernel, libraries, the command line, and user interfaces"
+    expected_skills: [boot_and_kernel, shell_scripting]
+  - id: intermediate_distros
+    prompt: "Recall when to use specific Linux distributions to address specific use cases"
+    expected_skills: [troubleshooting]
+  - id: intermediate_bios_uefi
+    prompt: "Determine Linux BIOS and UEFI interactions and commands mkinitrd, dracut, vmlinuz, grub"
+    expected_skills: [boot_and_kernel]
+  - id: intermediate_boot_sources
+    prompt: "List Linux boot sources such as USB, hard disk, ISO, and PXE"
+    expected_skills: [boot_and_kernel]
+  - id: intermediate_install_server_iso
+    prompt: "Install a Linux server OS from an ISO image"
+    expected_skills: [boot_and_kernel]
+  - id: intermediate_install_desktop_iso
+    prompt: "Install a Linux desktop OS from an ISO image"
+    expected_skills: [boot_and_kernel]
+  - id: intermediate_install_cloud_vm
+    prompt: "Install a Linux cloud-based virtual machine"
+    expected_skills: [troubleshooting]
+  - id: intermediate_manage_hardware
+    prompt: "Manage hardware using Linux commands such as lspci, lsusb, and dmidecode"
+    expected_skills: [troubleshooting]
+  - id: intermediate_basic_fs_cmds
+    prompt: "Recognize when to use Linux file system commands such as ls, cd, cp, mv, mkdir, rmdir, and touch"
+    expected_skills: [file_system]
+  - id: intermediate_navigate_fs
+    prompt: "Navigate Linux file system using common Linux OS commands"
+    expected_skills: [file_system]
+  - id: intermediate_find_locate
+    prompt: "Search Linux file systems using the find and locate commands"
+    expected_skills: [file_system]
+  - id: intermediate_grep_sed_awk
+    prompt: "Search for and filter data using commands such as grep, sed, and awk"
+    expected_skills: [text_processing]
+  - id: intermediate_init_runlevels
+    prompt: "Recall how the init process and runlevels work in Linux"
+    expected_skills: [process_and_service]
+  - id: intermediate_startup_shutdown
+    prompt: "Manage Linux startup and shutdown using init and runlevels"
+    expected_skills: [process_and_service, boot_and_kernel]
+  - id: intermediate_processes
+    prompt: "Manage Linux processes and daemons using commands such as ps, top, kill, and service"
+    expected_skills: [process_and_service]
+  - id: intermediate_jobs
+    prompt: "Manage Linux jobs using the bg, fg, and jobs commands"
+    expected_skills: [shell_scripting]
+  - id: intermediate_redirection
+    prompt: "Outline how to use comparison and redirection operators in a shell script"
+    expected_skills: [shell_scripting]
+  - id: intermediate_loops
+    prompt: "Outline how to use looping constructs in a shell script"
+    expected_skills: [shell_scripting]
+  - id: intermediate_env_vars
+    prompt: "View and manage environment and shell script variables, exported variables, and script exit codes"
+    expected_skills: [shell_scripting]
+  - id: intermediate_create_script
+    prompt: "Create and run a simple shell script"
+    expected_skills: [shell_scripting]
+  - id: intermediate_containers_vs_vm
+    prompt: "Describe how application containers differ from virtual machines"
+    expected_skills: [containerization]
+  - id: intermediate_install_docker
+    prompt: "Install Docker on a Linux host"
+    expected_skills: [containerization, package_management]
+  - id: intermediate_docker_cli
+    prompt: "List common Docker CLI commands"
+    expected_skills: [containerization]
+  - id: intermediate_storage_network_troubleshoot
+    prompt: "Troubleshoot storage problems such as file system mounting and bringing network cards up"
+    expected_skills: [storage, networking, troubleshooting]
+  - id: intermediate_resize2fs
+    prompt: "Use the resize2fs command to resize usable disk space"
+    expected_skills: [storage]
+  - id: intermediate_swap
+    prompt: "Manage Linux swap space during and after OS installation"
+    expected_skills: [storage, performance]
+  - id: intermediate_tcpip_dns
+    prompt: "Solve common TCP/IP configuration issues including DNS name resolution"
+    expected_skills: [networking, troubleshooting]
+
+  - id: advanced_manage_hardware
+    prompt: "Manage hardware using Linux commands such as lspci, lsusb, and dmidecode"
+    expected_skills: [troubleshooting]
+  - id: advanced_basic_fs_cmds
+    prompt: "Recognize when to use Linux file system commands such as ls, cd, cp, mv, mkdir, rmdir, and touch"
+    expected_skills: [file_system]
+  - id: advanced_navigate_fs
+    prompt: "Navigate Linux file system using common Linux OS commands"
+    expected_skills: [file_system]
+  - id: advanced_find_locate
+    prompt: "Search Linux file systems using the find and locate commands"
+    expected_skills: [file_system]
+  - id: advanced_grep_sed_awk
+    prompt: "Search for and filter data using commands such as grep, sed, and awk"
+    expected_skills: [text_processing]
+  - id: advanced_links_types
+    prompt: "Distinguish between hard and soft or symbolic links in Linux"
+    expected_skills: [file_system]
+  - id: advanced_links_work
+    prompt: "Work with hard and symbolic links in the Linux file system"
+    expected_skills: [file_system]
+  - id: advanced_fs_repair
+    prompt: "Manage and repair Linux file systems using commands such as fsck and tune2fs"
+    expected_skills: [file_system, storage]
+  - id: advanced_raid_levels
+    prompt: "Define common RAID disk levels for performance and fault tolerance"
+    expected_skills: [storage]
+  - id: advanced_configure_raid
+    prompt: "Configure software RAID in Linux"
+    expected_skills: [storage]
+  - id: advanced_lvm_purpose
+    prompt: "Define the purpose of LVM in the Linux environment"
+    expected_skills: [storage]
+  - id: advanced_lvm_config
+    prompt: "Configure LVM in Linux"
+    expected_skills: [storage]
+  - id: advanced_network_storage
+    prompt: "Recognize how Linux can use network storage"
+    expected_skills: [storage, networking]
+  - id: advanced_iscsi
+    prompt: "Configure an iSCSI initiator in Linux"
+    expected_skills: [storage]
+  - id: advanced_kernel_options
+    prompt: "Configure Linux kernel options"
+    expected_skills: [boot_and_kernel]
+  - id: advanced_yum
+    prompt: "Search for, install, update, and remove packages using yum"
+    expected_skills: [package_management]
+  - id: advanced_pacman
+    prompt: "Use pacman to locate, install, update, and remove packages"
+    expected_skills: [package_management]
+  - id: advanced_apt
+    prompt: "Utilize apt to find, install, update, and remove packages"
+    expected_skills: [package_management]
+  - id: advanced_compile_source
+    prompt: "Compile and install Linux software from source using ./configure, make, and make install"
+    expected_skills: [package_management]
+  - id: advanced_iac_yaml_json
+    prompt: "Define how IaC files written in YAML and JSON are used in the enterprise"
+    expected_skills: [iac_and_cicd]
+  - id: advanced_cicd_importance
+    prompt: "Define the importance of CI/CD"
+    expected_skills: [iac_and_cicd]
+  - id: advanced_terraform
+    prompt: "Use Terraform for IaC deployment"
+    expected_skills: [iac_and_cicd]
+  - id: advanced_git_benefits
+    prompt: "List the benefits of using Git for code version control"
+    expected_skills: [version_control]
+  - id: advanced_install_git
+    prompt: "Install Git on Ubuntu Linux and explore the Git file system structure"
+    expected_skills: [package_management, version_control]
+  - id: advanced_clone_repo
+    prompt: "Recognize how to clone a Git repository"
+    expected_skills: [version_control]
+  - id: advanced_systemd_logging_targets
+    prompt: "Outline how systemd can be used for logging and managing Linux targets using control groups"
+    expected_skills: [logging, process_and_service]
+  - id: advanced_journalctl_systemctl
+    prompt: "Use the journalctl and systemctl commands to manage Linux logs and services"
+    expected_skills: [logging, process_and_service]
+  - id: advanced_systemd_resolved_dns
+    prompt: "Use systemd-resolved to troubleshoot DNS problems"
+    expected_skills: [troubleshooting, networking]
+  - id: advanced_systemd_timer
+    prompt: "Configure scheduling with systemd timer instead of using cron"
+    expected_skills: [scheduling]
