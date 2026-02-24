@@ -39,6 +39,11 @@ agent:
     # score_based remains the fallback for unmatched prompts.
     fallback_mode: "score_based"
 
+  progress:
+    # Print per-request progress lines and latency to sanity-check local speed.
+    enabled: true
+    show_latency: true
+
   tracing:
     # Persist JSONL traces for LLM requests/responses and tool calls.
     enabled: true

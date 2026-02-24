@@ -225,3 +225,5 @@ bash runtime/scripts/run_prompt_contract_tests.sh
 Contract prompts and expected tool-call targets are in:
 
 - `tests/fixtures/llm_prompt_contracts.yaml`
+
+During runs, the agent now prints per-request local LLM latency (`->` request / `<-` response) so you can sanity-check local performance quickly.

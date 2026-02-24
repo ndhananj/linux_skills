@@ -5,37 +5,26 @@ agent.py — Linux Skills Agent
 A tool-calling agent that:
   1. Tries the local llama.cpp server first (CPU-only, zero API cost).
   2. Falls back to the Groq free-tier API if the local server is unreachable
-     or returns a rate-limit error.
+     or returns an error.
   3. Executes the tools requested by the LLM and feeds results back in a
      multi-turn loop until the model produces a final text answer.
-
-Quick start
------------
-    # Start the llama.cpp server in another terminal first:
-    #   cd runtime/scripts && bash start_server.sh
-    #
-    # Then run the agent:
-    python3 agent.py --prompt "Show me the 10 largest files in /var/log"
-
-Configuration
--------------
-Edit runtime/config.yaml to change non-secret settings (models, prompts, etc).
-Put secrets in runtime/config.local.yaml (untracked) or environment variables
-such as GROQ_API_KEY.
 """
 
-import json
+from __future__ import annotations
+
 import os
-import re
 import sys
 import textwrap
 from typing import Any, Dict, List, Optional
 
 import openai
-import yaml
 
-# The tool registry lives in the same directory as this file
+# The runtime helpers live in the same directory as this file
 sys.path.insert(0, os.path.dirname(__file__))
+from intent_policy import SelectionResult, select_tools
+from llm_gateway import CompletionMetrics, OpenAILLMGateway
+from settings import AppSettings, load_settings
+from tool_dispatch import dispatch_tool_call
 from tool_registry import discover_skills
 from tracing import JsonlTracer, default_log_dir, make_default_run_id
 
@@ -53,69 +42,90 @@ def _c(colour: str, text: str) -> str:
     return f"{colour}{text}{_RESET}" if sys.stdout.isatty() else text
 
 
-# ---------------------------------------------------------------------------
-# Agent
-# ---------------------------------------------------------------------------
 class LinuxSkillsAgent:
     """Orchestrates the LLM ↔ tool-calling loop."""
 
-    # Maximum number of LLM turns per prompt before giving up
     MAX_TURNS = 8
 
     def __init__(self, config_path: str = "config.yaml"):
-        self.cfg = self._load_config(config_path)
-        self._local_client = self._make_local_client()
+        abs_cfg = os.path.join(os.path.dirname(__file__), config_path)
+        self.settings: AppSettings = load_settings(abs_cfg)
+        self.cfg = self._to_legacy_cfg_dict(self.settings)
+
+        self._local_client = openai.OpenAI(
+            base_url=self.settings.llm.local.base_url,
+            api_key=self.settings.llm.local.api_key,
+        )
         self._groq_client = self._make_groq_client()
+
         self._tool_configs, self._tool_functions = self._load_tools()
         self._tool_config_by_name = {
             tc["function"]["name"]: tc for tc in self._tool_configs if tc.get("function", {}).get("name")
         }
+        self._tool_names = tuple(sorted(self._tool_config_by_name.keys()))
         self._skills = sorted({name.split("__", 1)[0] for name in self._tool_functions.keys()})
+
         self._runtime_dir = os.path.dirname(__file__)
         self._tracer = self._make_tracer()
+        self._gateway = OpenAILLMGateway(
+            local_client=self._local_client,
+            groq_client=self._groq_client,
+            local_model=self.settings.llm.local.model,
+            groq_model=self.settings.llm.groq.model,
+            min_tools_per_request=self.settings.agent.min_tools_per_request,
+            tracer=self._trace,
+            on_metrics=self._on_completion_metrics,
+        )
+
         print(_c(_GREEN, f"[agent] Ready — {len(self._tool_configs)} tools loaded."))
 
     # ------------------------------------------------------------------
     # Initialisation helpers
     # ------------------------------------------------------------------
 
-    def _load_config(self, path: str) -> Dict[str, Any]:
-        abs_path = os.path.join(os.path.dirname(__file__), path)
-        with open(abs_path) as fh:
-            cfg = yaml.safe_load(fh)
-
-        # Optional local override file for secrets and machine-specific tuning.
-        local_path = os.path.join(os.path.dirname(abs_path), "config.local.yaml")
-        if os.path.exists(local_path):
-            with open(local_path) as fh:
-                local_cfg = yaml.safe_load(fh) or {}
-            cfg = self._deep_merge_dicts(cfg, local_cfg)
-
-        # Environment variables override files (best for secret injection).
-        groq_api_key = os.environ.get("GROQ_API_KEY")
-        if groq_api_key:
-            cfg.setdefault("llm", {}).setdefault("groq", {})["api_key"] = groq_api_key
-        return cfg
-
-    def _deep_merge_dicts(self, base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
-        merged = dict(base)
-        for key, value in override.items():
-            if isinstance(value, dict) and isinstance(merged.get(key), dict):
-                merged[key] = self._deep_merge_dicts(merged[key], value)
-            else:
-                merged[key] = value
-        return merged
-
-    def _make_local_client(self) -> openai.OpenAI:
-        lc = self.cfg["llm"]["local"]
-        return openai.OpenAI(base_url=lc["base_url"], api_key=lc.get("api_key", "local-key"))
+    def _to_legacy_cfg_dict(self, settings: AppSettings) -> Dict[str, Any]:
+        """Compat shim so tests/docs relying on `agent.cfg` still work."""
+        return {
+            "agent": {
+                "system_prompt": settings.agent.system_prompt,
+                "max_tool_output_chars": settings.agent.max_tool_output_chars,
+                "max_tools_per_request": settings.agent.max_tools_per_request,
+                "min_tools_per_request": settings.agent.min_tools_per_request,
+                "shortlisting": {
+                    "mode": settings.agent.shortlisting.mode,
+                    "fallback_mode": settings.agent.shortlisting.fallback_mode,
+                },
+                "tracing": {
+                    "enabled": settings.agent.tracing.enabled,
+                    "log_dir": settings.agent.tracing.log_dir,
+                },
+                "progress": {
+                    "enabled": settings.agent.progress.enabled,
+                    "show_latency": settings.agent.progress.show_latency,
+                },
+            },
+            "llm": {
+                "local": {
+                    "base_url": settings.llm.local.base_url,
+                    "api_key": settings.llm.local.api_key,
+                    "model": settings.llm.local.model,
+                },
+                "groq": {
+                    "enabled": settings.llm.groq.enabled,
+                    "api_key": settings.llm.groq.api_key,
+                    "model": settings.llm.groq.model,
+                },
+            },
+        }
 
     def _make_tracer(self) -> Optional[JsonlTracer]:
-        tracing_cfg = self.cfg.get("agent", {}).get("tracing", {})
-        if not tracing_cfg.get("enabled", True):
+        tracing_cfg = self.settings.agent.tracing
+        if not tracing_cfg.enabled:
             return None
         run_id = make_default_run_id()
-        log_dir = tracing_cfg.get("log_dir") or default_log_dir(self._runtime_dir)
+        log_dir = tracing_cfg.log_dir or default_log_dir(self._runtime_dir)
+        if not os.path.isabs(log_dir):
+            log_dir = os.path.join(self._runtime_dir, log_dir)
         tracer = JsonlTracer(log_dir=log_dir, run_id=run_id)
         tracer.log(
             "agent_start",
@@ -127,18 +137,14 @@ class LinuxSkillsAgent:
         return tracer
 
     def _make_groq_client(self) -> Optional[openai.OpenAI]:
-        gc = self.cfg["llm"].get("groq", {})
-        if not gc.get("enabled", True):
+        gc = self.settings.llm.groq
+        if not gc.enabled:
             print(_c(_YELLOW, "[agent] Groq fallback disabled in config (llm.groq.enabled=false)."))
             return None
-        key = gc.get("api_key", "")
-        if not key or key == "YOUR_GROQ_API_KEY":
+        if not gc.api_key or gc.api_key == "YOUR_GROQ_API_KEY":
             print(_c(_YELLOW, "[agent] Groq API key not set — fallback disabled."))
             return None
-        return openai.OpenAI(
-            base_url="https://api.groq.com/openai/v1",
-            api_key=key,
-        )
+        return openai.OpenAI(base_url="https://api.groq.com/openai/v1", api_key=gc.api_key)
 
     def _load_tools(self):
         skills_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -149,7 +155,6 @@ class LinuxSkillsAgent:
     # ------------------------------------------------------------------
 
     def run(self, prompt: str) -> str:
-        """Run the agent loop for *prompt* and return the final answer."""
         self._trace("prompt_received", {"prompt": prompt})
         direct = self._try_builtin_answer(prompt)
         if direct is not None:
@@ -157,9 +162,10 @@ class LinuxSkillsAgent:
             print(_c(_GREEN, "\n[agent] Final answer:\n") + direct)
             return direct
 
-        system_prompt = self.cfg["agent"]["system_prompt"]
+        system_prompt = self.settings.agent.system_prompt
         selection = self._select_tool_configs(prompt)
         active_tools = selection["tools"]
+
         messages: List[Dict[str, Any]] = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": prompt},
@@ -174,6 +180,7 @@ class LinuxSkillsAgent:
                 "active_tool_names": [t["function"]["name"] for t in active_tools],
                 "selection_mode": selection["mode"],
                 "intent_family": selection.get("intent_family"),
+                "confidence": selection.get("confidence"),
                 "excluded_tools": selection.get("excluded_tools", []),
             },
         )
@@ -182,16 +189,12 @@ class LinuxSkillsAgent:
             print(_c(_CYAN, f"\n[agent] Turn {turn}/{self.MAX_TURNS}"))
             response_msg = self._complete(messages, active_tools)
 
-            # No tool calls → model is done
             if not response_msg.tool_calls:
                 answer = response_msg.content or ""
                 print(_c(_GREEN, "\n[agent] Final answer:\n") + answer)
                 return answer
 
-            # Append assistant message (with tool_calls) to history
             messages.append(response_msg)
-
-            # Execute each requested tool
             for tc in response_msg.tool_calls:
                 tool_result = self._dispatch(tc)
                 messages.append(
@@ -203,127 +206,63 @@ class LinuxSkillsAgent:
                     }
                 )
 
-        # Exhausted turns — ask the model for a summary with what it has
         print(_c(_RED, f"[agent] Reached {self.MAX_TURNS} turns. Requesting summary."))
         messages.append({"role": "user", "content": "Please summarise what you have found so far."})
         final = self._complete(messages, active_tools)
         return final.content or ""
 
     # ------------------------------------------------------------------
-    # LLM completion with local → Groq fallback
+    # Selection / completion / dispatch (backward-compatible internals)
     # ------------------------------------------------------------------
 
-    def _complete(
-        self,
-        messages: List[Dict[str, Any]],
-        tool_configs: List[Dict[str, Any]],
-        tool_choice: str = "auto",
-    ):
-        """Call the LLM; fall back to Groq on connection error."""
-        local_model = self.cfg["llm"]["local"]["model"]
-        groq_model = self.cfg["llm"].get("groq", {}).get("model", "llama-3.1-8b-instant")
-        candidate_tools = list(tool_configs)
-        minimum_tools = int(self.cfg.get("agent", {}).get("min_tools_per_request", 4))
-        if minimum_tools < 1:
-            minimum_tools = 1
+    def _select_tool_configs(self, prompt: str) -> Dict[str, Any]:
+        result: SelectionResult = select_tools(
+            prompt=prompt,
+            tool_names=self._tool_names,
+            max_tools=self.settings.agent.max_tools_per_request,
+            mode=self.settings.agent.shortlisting.mode,
+        )
+        tools = [self._tool_config_by_name[name] for name in result.tool_names if name in self._tool_config_by_name]
+        return {
+            "tools": tools,
+            "mode": result.mode,
+            "intent_family": result.intent_family,
+            "confidence": result.confidence,
+            "excluded_tools": list(result.excluded_tools),
+        }
 
-        # --- Try local llama.cpp server ---
-        while True:
-            try:
-                print(_c(_YELLOW, f"[agent]   → local ({local_model})"))
-                self._trace(
-                    "llm_request",
-                    {
-                        "backend": "local",
-                        "model": local_model,
-                        "message_count": len(messages),
-                        "tool_count": len(candidate_tools),
-                    },
+    def _complete(self, messages: List[Dict[str, Any]], tool_configs: List[Dict[str, Any]], tool_choice: str = "auto"):
+        if self.settings.agent.progress.enabled:
+            print(
+                _c(
+                    _YELLOW,
+                    f"[agent]   -> local ({self.settings.llm.local.model}) tools={len(tool_configs)} choice={tool_choice}",
                 )
-                resp = self._local_client.chat.completions.create(
-                    model=local_model,
-                    messages=messages,
-                    tools=candidate_tools,
-                    tool_choice=tool_choice,
-                )
-                self._trace(
-                    "llm_response",
-                    {
-                        "backend": "local",
-                        "model": local_model,
-                        "tool_calls": self._extract_tool_call_names(resp.choices[0].message),
-                    },
-                )
-                return resp.choices[0].message
-            except (openai.APIConnectionError, openai.APIStatusError) as local_err:
-                print(_c(_RED, f"[agent]   Local LLM error: {local_err}"))
-                self._trace(
-                    "llm_error",
-                    {
-                        "backend": "local",
-                        "model": local_model,
-                        "tool_count": len(candidate_tools),
-                        "error": str(local_err),
-                    },
-                )
-                err_text = str(local_err)
-                context_overflow = "exceeds the available context size" in err_text
-                if context_overflow and len(candidate_tools) > minimum_tools:
-                    next_count = max(minimum_tools, len(candidate_tools) // 2)
-                    if next_count >= len(candidate_tools):
-                        next_count = len(candidate_tools) - 1
-                    candidate_tools = candidate_tools[:next_count]
-                    self._trace(
-                        "tool_context_downsize",
-                        {
-                            "reason": "context_overflow",
-                            "new_tool_count": len(candidate_tools),
-                        },
-                    )
-                    continue
-                if context_overflow:
-                    raise RuntimeError(
-                        "Local LLM context window is too small even after auto-reducing tool schemas. "
-                        "Restart with larger context, e.g.:\n"
-                        "  LLAMA_CTX_SIZE=32768 bash scripts/start_server.sh\n"
-                        "or configure GROQ_API_KEY for fallback."
-                    ) from local_err
-                break
-
-        # --- Fall back to Groq ---
-        if self._groq_client is None:
-            raise RuntimeError(
-                "Local LLM is unavailable and no Groq API key is configured. "
-                "Set GROQ_API_KEY or llm.groq.api_key in config.local.yaml."
             )
-        print(_c(_YELLOW, f"[agent]   → Groq fallback ({groq_model})"))
-        self._trace(
-            "llm_request",
-            {
-                "backend": "groq",
-                "model": groq_model,
-                "message_count": len(messages),
-                "tool_count": len(tool_configs),
-            },
+        return self._gateway.complete(messages=messages, tool_configs=tool_configs, tool_choice=tool_choice)
+
+    def _dispatch(self, tool_call) -> str:
+        name = tool_call.function.name
+        try:
+            args_preview = tool_call.function.arguments
+        except Exception:
+            args_preview = "{}"
+        print(_c(_CYAN, f"[agent]   tool: {name}({args_preview})"))
+
+        output = dispatch_tool_call(
+            tool_call=tool_call,
+            tool_functions=self._tool_functions,
+            max_output_chars=self.settings.agent.max_tool_output_chars,
+            tracer=self._trace,
         )
-        resp = self._groq_client.chat.completions.create(
-            model=groq_model,
-            messages=messages,
-            tools=candidate_tools,
-            tool_choice=tool_choice,
-        )
-        self._trace(
-            "llm_response",
-            {
-                "backend": "groq",
-                "model": groq_model,
-                "tool_calls": self._extract_tool_call_names(resp.choices[0].message),
-            },
-        )
-        return resp.choices[0].message
+        print(textwrap.indent(output[:200], "    "))
+        return output
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
 
     def _try_builtin_answer(self, prompt: str) -> Optional[str]:
-        """Return a deterministic local answer for simple metadata queries."""
         prompt_lc = prompt.lower()
         wants_skill_list = (
             ("list" in prompt_lc or "what" in prompt_lc or "show" in prompt_lc)
@@ -338,334 +277,24 @@ class LinuxSkillsAgent:
             lines.append(f"- {skill} ({tool_count} tools)")
         return "\n".join(lines)
 
-    def _select_tool_configs(self, prompt: str) -> Dict[str, Any]:
-        """Select a context-safe subset of tools for the current prompt."""
-        default_max = int(self.cfg.get("agent", {}).get("max_tools_per_request", 24))
-        if default_max <= 0:
-            return {"tools": self._tool_configs, "mode": "all", "intent_family": None, "excluded_tools": []}
-
-        shortlisting_cfg = self.cfg.get("agent", {}).get("shortlisting", {})
-        mode = shortlisting_cfg.get("mode", "per_skill_fixed_slice")
-        intent_family = self._detect_intent_family(prompt)
-        if mode == "per_skill_fixed_slice" and intent_family is not None:
-            slice_names = self._fixed_slice_tool_names(intent_family)
-            if slice_names:
-                selected_names = [name for name in slice_names if name in self._tool_config_by_name]
-                selected_names = selected_names[:default_max]
-                selected = [self._tool_config_by_name[name] for name in selected_names]
-                if selected:
-                    excluded = self._excluded_tools_for_family(intent_family)
-                    return {
-                        "tools": selected,
-                        "mode": "per_skill_fixed_slice",
-                        "intent_family": intent_family,
-                        "excluded_tools": excluded,
-                    }
-
-        normalized_prompt = prompt.lower().replace("ci/cd", "cicd")
-        tokens = set(re.findall(r"[a-zA-Z0-9_]{3,}", normalized_prompt))
-        stop = {"the", "and", "for", "with", "that", "this", "from", "into", "show", "list", "have"}
-        tokens = {tok for tok in tokens if tok not in stop}
-        keyword_skill_scores = self._keyword_skill_scores(tokens)
-
-        scored: List[tuple[int, str]] = []
-        for full_name in self._tool_functions.keys():
-            skill, func = full_name.split("__", 1)
-            score = 0
-            if skill in tokens:
-                score += 5
-            score += keyword_skill_scores.get(skill, 0) * 4
-            func_parts = set(func.split("_"))
-            score += len(func_parts.intersection(tokens)) * 2
-            if score > 0:
-                scored.append((score, full_name))
-
-        selected_names: List[str] = []
-        if scored:
-            scored.sort(key=lambda item: (-item[0], item[1]))
-            selected_names = [name for _, name in scored[:default_max]]
-        else:
-            # Default tiny-safe core set when prompt does not map clearly.
-            core_skills = [
-                "file_system",
-                "process_and_service",
-                "networking",
-                "package_management",
-                "logging",
-                "troubleshooting",
-            ]
-            for skill in core_skills:
-                for name in sorted(self._tool_functions.keys()):
-                    if name.startswith(f"{skill}__"):
-                        selected_names.append(name)
-                        if len(selected_names) >= default_max:
-                            break
-                if len(selected_names) >= default_max:
-                    break
-
-        selected = [self._tool_config_by_name[name] for name in selected_names if name in self._tool_config_by_name]
-        final_tools = selected if selected else self._tool_configs[:default_max]
-        return {
-            "tools": final_tools,
-            "mode": "score_based",
-            "intent_family": intent_family,
-            "excluded_tools": [],
-        }
-
-    def _detect_intent_family(self, prompt: str) -> Optional[str]:
-        prompt_lc = prompt.lower()
-        conceptual_verbs = (
-            "define",
-            "recall",
-            "outline",
-            "describe",
-            "recognize",
-            "distinguish",
-            "list",
-            "explain",
-            "install",
+    def _on_completion_metrics(self, metrics: CompletionMetrics) -> None:
+        if not self.settings.agent.progress.enabled or not self.settings.agent.progress.show_latency:
+            return
+        print(
+            _c(
+                _YELLOW,
+                f"[agent]   <- {metrics.backend} ({metrics.model}) {metrics.latency_s:.2f}s tools={metrics.tool_count}",
+            )
         )
-        if any(prompt_lc.startswith(v + " ") for v in conceptual_verbs):
-            return None
-
-        operational_patterns = (
-            r"\bshow\b",
-            r"\bfind\b",
-            r"\bcheck\b",
-            r"\brun\b",
-            r"\bdisplay\b",
-            r"\btail\b",
-            r"\bstatus\b",
-            r"\btroubleshoot\b",
-            r"\bmonitor\b",
-            r"\btop\s+\d+\b",
-            r"\bshow me\b",
-        )
-        if not any(re.search(p, prompt_lc) for p in operational_patterns):
-            return None
-
-        if (
-            ("largest files" in prompt_lc or "biggest files" in prompt_lc)
-            or ("largest" in prompt_lc and "files" in prompt_lc)
-            or ("top" in prompt_lc and "files" in prompt_lc and ("large" in prompt_lc or "size" in prompt_lc))
-        ):
-            return "file_size_listing"
-        if any(kw in prompt_lc for kw in ["tail", "journal", "syslog", "auth log", "logs"]):
-            return "logging_basic"
-        if any(kw in prompt_lc for kw in ["interfaces", "routing", "dns", "ports", "ifconfig", "netstat", "ip "]):
-            return "networking_basic"
-        if any(kw in prompt_lc for kw in ["process", "service", "cpu", "memory"]) or re.search(r"\btop\s+\d+\b", prompt_lc):
-            return "process_basic"
-        if any(kw in prompt_lc for kw in ["disk", "storage", "mount", "swap", "filesystem", "lsblk"]):
-            return "disk_storage_basic"
-        if any(kw in prompt_lc for kw in ["list files", "find files", "directory", "directories", "ls ", "pwd"]):
-            return "filesystem_navigation"
-        return None
-
-    def _fixed_slice_tool_names(self, family: str) -> List[str]:
-        slices = {
-            "file_size_listing": [
-                "file_system__find_files",
-                "file_system__disk_usage",
-                "file_system__list_directory",
-                "shell_scripting__run_shell_command",
-            ],
-            "filesystem_navigation": [
-                "file_system__list_directory",
-                "file_system__find_files",
-                "file_system__disk_usage",
-                "file_system__disk_free",
-                "file_system__touch_file",
-            ],
-            "logging_basic": [
-                "logging__tail_log",
-                "logging__view_journal",
-                "logging__show_syslog",
-                "logging__search_log",
-                "process_and_service__view_journal",
-            ],
-            "networking_basic": [
-                "networking__show_interfaces",
-                "networking__show_routing_table",
-                "networking__dns_lookup",
-                "networking__show_open_ports",
-                "networking__show_active_connections",
-                "troubleshooting__check_network_connectivity",
-            ],
-            "process_basic": [
-                "process_and_service__show_top_processes",
-                "process_and_service__list_processes",
-                "process_and_service__service_status",
-                "performance__show_top_processes_by_cpu",
-                "performance__show_top_processes_by_memory",
-                "performance__show_memory_usage",
-            ],
-            "disk_storage_basic": [
-                "storage__list_block_devices",
-                "storage__show_mounts",
-                "storage__show_swap_usage",
-                "file_system__disk_free",
-                "file_system__disk_usage",
-            ],
-        }
-        return slices.get(family, [])
-
-    def _excluded_tools_for_family(self, family: str) -> List[str]:
-        exclusions = {
-            "file_size_listing": [
-                "text_processing__concatenate_files",
-                "text_processing__diff_files",
-                "text_processing__join_files",
-            ]
-        }
-        return exclusions.get(family, [])
-
-    def _keyword_skill_scores(self, tokens: set[str]) -> Dict[str, int]:
-        keyword_map = {
-            "kernel": {"boot_and_kernel"},
-            "bootloader": {"boot_and_kernel"},
-            "grub": {"boot_and_kernel"},
-            "dracut": {"boot_and_kernel"},
-            "initramfs": {"boot_and_kernel"},
-            "bios": {"boot_and_kernel"},
-            "uefi": {"boot_and_kernel"},
-            "boot": {"boot_and_kernel", "file_system"},
-            "proc": {"file_system"},
-            "dev": {"file_system"},
-            "var": {"file_system"},
-            "filesystem": {"file_system", "storage"},
-            "partition": {"storage"},
-            "raid": {"storage"},
-            "lvm": {"storage"},
-            "iscsi": {"storage"},
-            "mount": {"storage", "file_system"},
-            "permission": {"user_and_group", "file_system"},
-            "chmod": {"user_and_group"},
-            "chown": {"user_and_group"},
-            "chgrp": {"user_and_group"},
-            "network": {"networking", "troubleshooting"},
-            "ipv4": {"networking"},
-            "ipv6": {"networking"},
-            "distribution": {"troubleshooting"},
-            "distributions": {"troubleshooting"},
-            "cloud": {"troubleshooting"},
-            "dns": {"networking", "troubleshooting"},
-            "dhcp": {"networking"},
-            "firewall": {"security"},
-            "waf": {"security"},
-            "iptables": {"security"},
-            "ufw": {"security"},
-            "nftables": {"security"},
-            "pam": {"security"},
-            "ldap": {"security"},
-            "authentication": {"security"},
-            "auth": {"security"},
-            "crypto": {"security"},
-            "cryptography": {"security"},
-            "threat": {"security"},
-            "cia": {"security"},
-            "container": {"containerization"},
-            "docker": {"containerization"},
-            "process": {"process_and_service"},
-            "daemon": {"process_and_service"},
-            "systemd": {"process_and_service", "logging", "scheduling"},
-            "journalctl": {"logging", "process_and_service"},
-            "service": {"process_and_service"},
-            "script": {"shell_scripting", "text_processing"},
-            "awk": {"text_processing", "file_system"},
-            "sed": {"text_processing", "file_system"},
-            "grep": {"text_processing", "file_system"},
-            "egrep": {"text_processing"},
-            "find": {"file_system"},
-            "tee": {"shell_scripting", "text_processing"},
-            "git": {"version_control"},
-            "terraform": {"iac_and_cicd"},
-            "iac": {"iac_and_cicd"},
-            "cicd": {"iac_and_cicd"},
-            "package": {"package_management"},
-            "apt": {"package_management"},
-            "yum": {"package_management"},
-            "pacman": {"package_management"},
-            "performance": {"performance", "troubleshooting"},
-            "cpu": {"performance"},
-            "memory": {"performance"},
-            "swap": {"storage", "performance"},
-            "hardware": {"troubleshooting", "performance"},
-            "lspci": {"troubleshooting"},
-            "lsusb": {"troubleshooting"},
-            "dmidecode": {"troubleshooting"},
-            "schedule": {"scheduling"},
-            "cron": {"scheduling"},
-            "timer": {"scheduling"},
-            "resolved": {"troubleshooting"},
-            "log": {"logging"},
-            "troubleshoot": {"troubleshooting"},
-        }
-        scores: Dict[str, int] = {}
-        for token in tokens:
-            for skill in keyword_map.get(token, set()):
-                scores[skill] = scores.get(skill, 0) + 1
-        return scores
-
-    def _extract_tool_call_names(self, response_msg: Any) -> List[str]:
-        names: List[str] = []
-        for tc in getattr(response_msg, "tool_calls", []) or []:
-            fn = getattr(tc, "function", None)
-            name = getattr(fn, "name", None)
-            if isinstance(name, str):
-                names.append(name)
-        return names
 
     def _trace(self, event: str, payload: Optional[Dict[str, Any]] = None) -> None:
         if self._tracer is None:
             return
         self._tracer.log(event=event, payload=payload or {})
 
-    # ------------------------------------------------------------------
-    # Tool dispatch
-    # ------------------------------------------------------------------
-
-    def _dispatch(self, tool_call) -> str:
-        """Execute a single tool call and return its string output."""
-        name = tool_call.function.name
-        try:
-            args = json.loads(tool_call.function.arguments or "{}")
-        except json.JSONDecodeError:
-            args = {}
-
-        print(_c(_CYAN, f"[agent]   tool: {name}({args})"))
-        self._trace("tool_call", {"name": name, "args": args})
-
-        func = self._tool_functions.get(name)
-        if func is None:
-            return f"ERROR: unknown tool '{name}'"
-
-        try:
-            result = func(**args)
-            output = str(result) if result is not None else "Done."
-        except Exception as exc:
-            output = f"ERROR executing {name}: {exc}"
-
-        # Truncate very long outputs so they don't overflow the context window
-        max_chars = self.cfg.get("agent", {}).get("max_tool_output_chars", 4000)
-        if len(output) > max_chars:
-            output = output[:max_chars] + f"\n... [truncated to {max_chars} chars]"
-
-        print(textwrap.indent(output[:200], "    "))
-        self._trace(
-            "tool_result",
-            {
-                "name": name,
-                "output_preview": output[:200],
-                "output_chars": len(output),
-                "is_error": output.startswith("ERROR"),
-            },
-        )
-        return output
-
 
 # ---------------------------------------------------------------------------
-# CLI entry point (python3 agent.py --prompt "...")
+# CLI entry point
 # ---------------------------------------------------------------------------
 def main():
     import argparse

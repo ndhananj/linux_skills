@@ -14,4 +14,4 @@ fi
 echo "Running live LLM prompt contract tests against http://127.0.0.1:8080 ..."
 echo "This validates natural-language prompts -> expected tool calls for all skills."
 
-RUN_LLM_PROMPT_CONTRACT=1 pytest -q tests/test_llm_prompt_contract_live.py "$@"
+pytest -q -m live_contract tests/test_llm_prompt_contract_live.py "$@"
