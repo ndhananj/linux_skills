@@ -48,7 +48,7 @@ Prompts covered by `run_prompt_contract_tests.sh` (from `tests/fixtures/llm_prom
 
 | Runner | Last Status | Last Run (UTC) | Duration | Command | Summary |
 |---|---|---|---:|---|---|
-| `live_prompt_contract` | `NEVER` | - | - | - | - |
+| `live_prompt_contract` | `PASS` | 2026-02-24 22:52:40Z | 1376s | `bash runtime/scripts/run_prompt_contract_tests.sh` | 1 passed in 1371.51s (0:22:51) |
 | `unit_pytest` | `PASS` | 2026-02-24 22:15:31Z | 2s | `bash runtime/scripts/run_unit_tests.sh` | 11 passed, 1 skipped in 1.19s |
 
 <!-- TEST_RUN_STATUS_END -->
