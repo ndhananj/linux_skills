@@ -212,3 +212,14 @@ Run the expectation tests (includes the full Entry/Beginner/Intermediate/Advance
 cd linux_skills
 pytest -q tests/test_llm_tool_call_routing.py
 ```
+
+For live LLM contract checks (natural-language prompts -> expected tool calls, one prompt per skill), start the local server and run:
+
+```bash
+cd linux_skills
+bash runtime/scripts/run_prompt_contract_tests.sh
+```
+
+Contract prompts and expected tool-call targets are in:
+
+- `tests/fixtures/llm_prompt_contracts.yaml`

@@ -1,0 +1,90 @@
+cases:
+  - id: boot_and_kernel
+    prompt: "Check this host kernel version and show currently loaded kernel modules."
+    expected_skill: "boot_and_kernel"
+    expected_any_tools: ["boot_and_kernel__show_kernel_version", "boot_and_kernel__list_kernel_modules"]
+
+  - id: containerization
+    prompt: "List Docker containers and images on this machine."
+    expected_skill: "containerization"
+    expected_any_tools: ["containerization__list_containers", "containerization__list_images"]
+
+  - id: file_system
+    prompt: "Find files larger than 50MB under /var/log and show disk usage for /var."
+    expected_skill: "file_system"
+    expected_any_tools: ["file_system__find_files", "file_system__disk_usage"]
+
+  - id: iac_and_cicd
+    prompt: "In this working directory, run Terraform init then Terraform plan."
+    expected_skill: "iac_and_cicd"
+    expected_any_tools: ["iac_and_cicd__terraform_init", "iac_and_cicd__terraform_plan"]
+
+  - id: logging
+    prompt: "Show the last 50 lines of syslog and then view recent journal entries."
+    expected_skill: "logging"
+    expected_any_tools: ["logging__tail_log", "logging__view_journal"]
+
+  - id: networking
+    prompt: "Show current interfaces and routing table, then do a DNS lookup for openai.com."
+    expected_skill: "networking"
+    expected_any_tools: ["networking__show_interfaces", "networking__show_routing_table", "networking__dns_lookup"]
+
+  - id: package_management
+    prompt: "Update apt metadata and search for nginx packages."
+    expected_skill: "package_management"
+    expected_any_tools: ["package_management__apt_update", "package_management__apt_search"]
+
+  - id: performance
+    prompt: "Show CPU, memory, and top CPU-consuming processes right now."
+    expected_skill: "performance"
+    expected_any_tools: ["performance__show_cpu_info", "performance__show_memory_usage", "performance__show_top_processes_by_cpu"]
+
+  - id: process_and_service
+    prompt: "Check ssh service status and list the top running processes."
+    expected_skill: "process_and_service"
+    expected_any_tools: ["process_and_service__service_status", "process_and_service__show_top_processes"]
+
+  - id: scheduling
+    prompt: "List current cron jobs and active systemd timers."
+    expected_skill: "scheduling"
+    expected_any_tools: ["scheduling__list_cron_jobs", "scheduling__list_systemd_timers"]
+
+  - id: security
+    prompt: "Check UFW status and list current iptables rules."
+    expected_skill: "security"
+    expected_any_tools: ["security__ufw_status", "security__iptables_list"]
+
+  - id: shell_scripting
+    prompt: "Create a simple shell script that prints disk usage and check its syntax."
+    expected_skill: "shell_scripting"
+    expected_any_tools: ["shell_scripting__create_script", "shell_scripting__check_script_syntax"]
+
+  - id: ssh
+    prompt: "Generate a new SSH key and display SSH client configuration."
+    expected_skill: "ssh"
+    expected_any_tools: ["ssh__generate_ssh_key", "ssh__show_ssh_config"]
+
+  - id: storage
+    prompt: "List block devices and mounted filesystems, then show swap usage."
+    expected_skill: "storage"
+    expected_any_tools: ["storage__list_block_devices", "storage__show_mounts", "storage__show_swap_usage"]
+
+  - id: text_processing
+    prompt: "Sort lines in a file and count unique lines in the result."
+    expected_skill: "text_processing"
+    expected_any_tools: ["text_processing__sort_lines", "text_processing__count_unique_lines"]
+
+  - id: troubleshooting
+    prompt: "Troubleshoot DNS by checking name resolution and testing connectivity to 8.8.8.8."
+    expected_skill: "troubleshooting"
+    expected_any_tools: ["troubleshooting__check_dns_resolution", "troubleshooting__check_network_connectivity"]
+
+  - id: user_and_group
+    prompt: "Show user info for root and list groups on this system."
+    expected_skill: "user_and_group"
+    expected_any_tools: ["user_and_group__show_user_info", "user_and_group__list_groups"]
+
+  - id: version_control
+    prompt: "Show git status and recent git log in this repository."
+    expected_skill: "version_control"
+    expected_any_tools: ["version_control__git_status", "version_control__git_log"]
