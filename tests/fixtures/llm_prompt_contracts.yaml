@@ -12,7 +12,7 @@ cases:
   - id: file_system
     prompt: "Find files larger than 50MB under /var/log and show disk usage for /var."
     expected_skill: "file_system"
-    expected_any_tools: ["file_system__find_files", "file_system__disk_usage"]
+    expected_any_tools: ["file_system__largest_files", "file_system__disk_usage", "file_system__find_files"]
 
   - id: iac_and_cicd
     prompt: "In this working directory, run Terraform init then Terraform plan."
