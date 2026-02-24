@@ -154,6 +154,7 @@ Each skill module contains a `SKILL.md` (human-readable reference and agent inst
 |-----|-------------|
 | `agent.system_prompt` | The system prompt sent to the LLM at the start of every session. |
 | `agent.max_tool_output_chars` | Maximum characters of tool output included in the LLM context (default 4000). |
+| `agent.max_tools_per_request` | Maximum tool schemas sent per request (default 24, tuned for 4K context). |
 | `llm.local.base_url` | URL of the local llama.cpp server. |
 | `llm.local.model` | Model name sent in the request (llama.cpp ignores this). |
 | `llm.groq.api_key` | Optional in `config.local.yaml` only (or set `GROQ_API_KEY` env var). |
@@ -186,3 +187,5 @@ use one of these paths:
 
 1. Tiny VPS path (recommended): keep 4K context and configure Groq fallback via `GROQ_API_KEY` or `runtime/config.local.yaml`.
 2. Bigger machine path: restart with larger context, e.g. `LLAMA_CTX_SIZE=32768 bash runtime/scripts/start_server.sh`.
+
+By default, `agent.py` now sends only a context-safe subset of tools per request and handles skill-list prompts locally, so common invocations work on 4K without extra flags.

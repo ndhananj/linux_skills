@@ -4,7 +4,7 @@ This directory contains the core infrastructure that powers the Linux Skills Age
 
 ## Components
 
-**`agent.py`** is the main entry point. It initialises the tool registry, connects to the local llama.cpp server (with automatic Groq fallback), and runs the multi-turn tool-calling loop until the LLM produces a final text answer.
+**`agent.py`** is the main entry point. It initialises the tool registry, connects to the local llama.cpp server (with automatic Groq fallback), applies context-safe tool shortlisting for tiny 4K setups, and runs the multi-turn tool-calling loop until the LLM produces a final text answer.
 
 **`tool_registry.py`** walks the repository tree, imports every `tools.py` it finds, and generates an OpenAI-compatible function-calling schema for each callable. New skill modules are picked up automatically — no manual registration is needed.
 

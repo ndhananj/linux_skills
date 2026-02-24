@@ -26,6 +26,7 @@ such as GROQ_API_KEY.
 
 import json
 import os
+import re
 import sys
 import textwrap
 from typing import Any, Dict, List, Optional
@@ -65,6 +66,10 @@ class LinuxSkillsAgent:
         self._local_client = self._make_local_client()
         self._groq_client = self._make_groq_client()
         self._tool_configs, self._tool_functions = self._load_tools()
+        self._tool_config_by_name = {
+            tc["function"]["name"]: tc for tc in self._tool_configs if tc.get("function", {}).get("name")
+        }
+        self._skills = sorted({name.split("__", 1)[0] for name in self._tool_functions.keys()})
         print(_c(_GREEN, f"[agent] Ready — {len(self._tool_configs)} tools loaded."))
 
     # ------------------------------------------------------------------
@@ -126,15 +131,23 @@ class LinuxSkillsAgent:
 
     def run(self, prompt: str) -> str:
         """Run the agent loop for *prompt* and return the final answer."""
+        direct = self._try_builtin_answer(prompt)
+        if direct is not None:
+            print(_c(_GREEN, "\n[agent] Final answer:\n") + direct)
+            return direct
+
         system_prompt = self.cfg["agent"]["system_prompt"]
+        active_tools = self._select_tool_configs(prompt)
         messages: List[Dict[str, Any]] = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": prompt},
         ]
 
+        print(_c(_YELLOW, f"[agent] Tool schemas in context: {len(active_tools)}/{len(self._tool_configs)}"))
+
         for turn in range(1, self.MAX_TURNS + 1):
             print(_c(_CYAN, f"\n[agent] Turn {turn}/{self.MAX_TURNS}"))
-            response_msg = self._complete(messages)
+            response_msg = self._complete(messages, active_tools)
 
             # No tool calls → model is done
             if not response_msg.tool_calls:
@@ -160,14 +173,14 @@ class LinuxSkillsAgent:
         # Exhausted turns — ask the model for a summary with what it has
         print(_c(_RED, f"[agent] Reached {self.MAX_TURNS} turns. Requesting summary."))
         messages.append({"role": "user", "content": "Please summarise what you have found so far."})
-        final = self._complete(messages)
+        final = self._complete(messages, active_tools)
         return final.content or ""
 
     # ------------------------------------------------------------------
     # LLM completion with local → Groq fallback
     # ------------------------------------------------------------------
 
-    def _complete(self, messages: List[Dict[str, Any]]):
+    def _complete(self, messages: List[Dict[str, Any]], tool_configs: List[Dict[str, Any]]):
         """Call the LLM; fall back to Groq on connection error."""
         local_model = self.cfg["llm"]["local"]["model"]
         groq_model = self.cfg["llm"].get("groq", {}).get("model", "llama-3.1-8b-instant")
@@ -178,7 +191,7 @@ class LinuxSkillsAgent:
             resp = self._local_client.chat.completions.create(
                 model=local_model,
                 messages=messages,
-                tools=self._tool_configs,
+                tools=tool_configs,
                 tool_choice="auto",
             )
             return resp.choices[0].message
@@ -203,10 +216,73 @@ class LinuxSkillsAgent:
         resp = self._groq_client.chat.completions.create(
             model=groq_model,
             messages=messages,
-            tools=self._tool_configs,
+            tools=tool_configs,
             tool_choice="auto",
         )
         return resp.choices[0].message
+
+    def _try_builtin_answer(self, prompt: str) -> Optional[str]:
+        """Return a deterministic local answer for simple metadata queries."""
+        prompt_lc = prompt.lower()
+        wants_skill_list = (
+            ("list" in prompt_lc or "what" in prompt_lc or "show" in prompt_lc)
+            and ("skills" in prompt_lc or "skill modules" in prompt_lc)
+        )
+        if not wants_skill_list:
+            return None
+
+        lines = [f"I have {len(self._skills)} skill modules in linux_skills:"]
+        for skill in self._skills:
+            tool_count = sum(1 for name in self._tool_functions if name.startswith(f"{skill}__"))
+            lines.append(f"- {skill} ({tool_count} tools)")
+        return "\n".join(lines)
+
+    def _select_tool_configs(self, prompt: str) -> List[Dict[str, Any]]:
+        """Select a context-safe subset of tools for the current prompt."""
+        default_max = int(self.cfg.get("agent", {}).get("max_tools_per_request", 24))
+        if default_max <= 0:
+            return self._tool_configs
+
+        tokens = set(re.findall(r"[a-zA-Z_]{3,}", prompt.lower()))
+        stop = {"the", "and", "for", "with", "that", "this", "from", "into", "show", "list", "have"}
+        tokens = {tok for tok in tokens if tok not in stop}
+
+        scored: List[tuple[int, str]] = []
+        for full_name in self._tool_functions.keys():
+            skill, func = full_name.split("__", 1)
+            score = 0
+            if skill in tokens:
+                score += 5
+            func_parts = set(func.split("_"))
+            score += len(func_parts.intersection(tokens)) * 2
+            if score > 0:
+                scored.append((score, full_name))
+
+        selected_names: List[str] = []
+        if scored:
+            scored.sort(key=lambda item: (-item[0], item[1]))
+            selected_names = [name for _, name in scored[:default_max]]
+        else:
+            # Default tiny-safe core set when prompt does not map clearly.
+            core_skills = [
+                "file_system",
+                "process_and_service",
+                "networking",
+                "package_management",
+                "logging",
+                "troubleshooting",
+            ]
+            for skill in core_skills:
+                for name in sorted(self._tool_functions.keys()):
+                    if name.startswith(f"{skill}__"):
+                        selected_names.append(name)
+                        if len(selected_names) >= default_max:
+                            break
+                if len(selected_names) >= default_max:
+                    break
+
+        selected = [self._tool_config_by_name[name] for name in selected_names if name in self._tool_config_by_name]
+        return selected if selected else self._tool_configs[:default_max]
 
     # ------------------------------------------------------------------
     # Tool dispatch
